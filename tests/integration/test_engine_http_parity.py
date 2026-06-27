@@ -71,3 +71,22 @@ def test_http_estimate_is_not_the_legacy_stage_sum():
                  + selected["qc_days"] + selected["logistics_days"])
     # The engine accounts for the full workflow, so it must exceed the 4-stage sum.
     assert body["estimated_lead_time_days"] > stage_sum
+
+
+def test_http_capacity_drives_supplier_selection():
+    """DEFECT-03 over HTTP: with stage durations equal, the higher-capacity
+    supplier wins because its SEWING node is shorter."""
+    payload = {
+        "order": {"quantity": 10000, "evaluation_date": ANCHOR},
+        "suppliers": [
+            {"supplier_id": "SLOW", "capacity_per_day": 200, "material_ready_days": 5,
+             "production_days": 14, "qc_days": 2, "logistics_days": 7, "confidence": 0.8},
+            {"supplier_id": "FAST", "capacity_per_day": 5000, "material_ready_days": 5,
+             "production_days": 14, "qc_days": 2, "logistics_days": 7, "confidence": 0.8},
+        ],
+    }
+    body = client.post("/v1/lead-time/estimate", json=payload).json()
+    assert body["selected_supplier_id"] == "FAST"
+    # The two suppliers' own engine lead times must differ by capacity.
+    traces = {t["supplier_id"]: t["total_lead_time_days"] for t in body["calculation_trace"]}
+    assert traces["SLOW"] > traces["FAST"]

@@ -134,3 +134,51 @@ class TestReforecast:
         for opt in result.acceleration_options:
             assert "name" in opt
             assert "days_saved" in opt
+
+
+def _fresh_packet():
+    """A new evaluated packet (the reforecast mutates options in place, so each
+    determinism run needs its own copy)."""
+    engine = LeadTimeGraphEngine()
+    participants = [make_participant(f"P{i}") for i in range(1, 4)]
+    order = make_order(order_id="REFC-DET", quantity=2000, participants=participants,
+                       requested_date=date(2026, 12, 31))
+    return engine, engine.evaluate(order)
+
+
+class TestReforecastDeterminism:
+    """DEFECT-04: reforecast must not depend on the wall-clock date."""
+
+    def test_reforecast_is_deterministic_for_same_anchor(self):
+        node_id_a = None
+        e1, p1 = _fresh_packet()
+        nid = p1.options[0].nodes[0].node_id
+        r1 = e1.reforecast(p1, [_material_delay_event(node_id=nid, delay_days=10)],
+                           evaluation_date=date(2026, 6, 27))
+        e2, p2 = _fresh_packet()
+        nid2 = p2.options[0].nodes[0].node_id
+        r2 = e2.reforecast(p2, [_material_delay_event(node_id=nid2, delay_days=10)],
+                           evaluation_date=date(2026, 6, 27))
+        assert r1.commitable_date == r2.commitable_date
+
+    def test_reforecast_anchor_affects_output(self):
+        e1, p1 = _fresh_packet()
+        nid = p1.options[0].nodes[0].node_id
+        early = e1.reforecast(p1, [_material_delay_event(node_id=nid, delay_days=10)],
+                              evaluation_date=date(2026, 1, 1))
+        e2, p2 = _fresh_packet()
+        nid2 = p2.options[0].nodes[0].node_id
+        late = e2.reforecast(p2, [_material_delay_event(node_id=nid2, delay_days=10)],
+                             evaluation_date=date(2026, 9, 1))
+        # A later anchor pushes the (non-anchored) downstream dates out.
+        assert late.commitable_date >= early.commitable_date
+
+    def test_reforecast_without_anchor_is_deterministic(self):
+        """Omitting evaluation_date must still be reproducible (no date.today())."""
+        e1, p1 = _fresh_packet()
+        nid = p1.options[0].nodes[0].node_id
+        r1 = e1.reforecast(p1, [_material_delay_event(node_id=nid, delay_days=10)])
+        e2, p2 = _fresh_packet()
+        nid2 = p2.options[0].nodes[0].node_id
+        r2 = e2.reforecast(p2, [_material_delay_event(node_id=nid2, delay_days=10)])
+        assert r1.commitable_date == r2.commitable_date

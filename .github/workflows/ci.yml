@@ -52,15 +52,15 @@ jobs:
 
       - name: POST /v1/lead-time/estimate
         run: |
-          # updated from service-layer value 28 to engine value 147 after DEFECT-01 fix
-          # (estimate is now the graph engine's full-workflow commitable lead time;
-          # deadline_days raised to 300 so the realistic ~147d order is feasible).
+          # updated from service-layer value 28 to engine value 124 after DEFECT-01
+          # + DEFECT-03 (engine full-workflow commitable lead time with capacity-
+          # bound SEWING; deadline_days raised to 300 so the ~124d order is feasible).
           curl -sf http://localhost:8090/v1/lead-time/estimate \
             -H 'content-type: application/json' \
             -d '{"order":{"product_type":"apparel","quantity":10000,"deadline_days":300},
                  "suppliers":[{"supplier_id":"M1","capacity_per_day":800,"material_ready_days":5,
                  "production_days":14,"qc_days":2,"logistics_days":7,"confidence":0.8}]}' \
-            | tee /dev/stderr | grep -q '"estimated_lead_time_days":147'
+            | tee /dev/stderr | grep -q '"estimated_lead_time_days":124'
 
       - name: POST /v1/paths/enumerate
         run: |

@@ -27,7 +27,7 @@ def test_estimate_returns_ordered_percentile_bands():
     body = client.post("/v1/lead-time/estimate", json=payload).json()
     # updated: bands are now engine-derived (p50/p80/p90 = earliest/most_likely/
     # commitable lead days), not the old sum=28. Ordering invariants still hold.
-    assert body["p50_days"] == 74
+    assert body["p50_days"] == 62
     assert body["p80_days"] >= body["p50_days"]
     assert body["p90_days"] >= body["p80_days"]
     assert body["minimum_feasible_days"] <= body["p50_days"]

@@ -56,17 +56,18 @@ def test_estimate_matches_spec_example():
     r = client.post("/v1/lead-time/estimate", json=payload)
     assert r.status_code == 200
     body = r.json()
-    # updated: was service-layer sum=28, now engine commitable=147
-    assert body["estimated_lead_time_days"] == 147
+    # updated: was service-layer sum=28, now engine commitable=124 (capacity-aware
+    # SEWING: cap 800/day for 10000 -> ceil=13 production days, DEFECT-03).
+    assert body["estimated_lead_time_days"] == 124
     assert body["feasible"] is True
     assert body["supplier_count"] == 1
     assert body["selected_supplier_id"] == "M1"
-    # updated: was 2026-07-25 (anchor+28); now engine earliest_feasible=2026-09-09
-    assert body["earliest_delivery_date"] == "2026-09-09"
+    # updated: was 2026-07-25 (anchor+28); now engine earliest_feasible=2026-08-28
+    assert body["earliest_delivery_date"] == "2026-08-28"
     # additive engine fields are populated (DEFECT-01). feasibility mirrors the
     # engine FeasibilityStatus: a single option triggers the 0/1/2/3 rule ->
     # LIMITED_OPTIONS (distinct from the `feasible` deadline boolean above).
-    assert body["committable_date"] == "2026-11-21"
+    assert body["committable_date"] == "2026-10-29"
     assert body["feasibility"] == "LIMITED_OPTIONS"
     assert any(w["code"] == "LIMITED_COMPARISON" for w in body["warnings"])
     assert len(body["calculation_trace"]) == 1
@@ -82,9 +83,9 @@ def test_capacity_floor_raises_production():
     trace = r.json()["calculation_trace"][0]
     # Capacity floor is preserved as engine input-prep: production raised to 100.
     assert trace["capacity_adjusted_production_days"] == 100
-    # updated: was service-layer sum 5+100+2+7=114, now engine commitable=284
-    # (the capacity-raised production still dominates the engine result).
-    assert r.json()["estimated_lead_time_days"] == 284
+    # updated: was service-layer sum 5+100+2+7=114, now engine commitable=296
+    # (capacity-bound SEWING of 100 days dominates the engine result, DEFECT-03).
+    assert r.json()["estimated_lead_time_days"] == 296
 
 
 def test_zero_suppliers():
@@ -165,9 +166,9 @@ def test_reforecast_applies_delta_without_mutating_baseline():
     body = client.post("/v1/reforecast", json=payload).json()
     # updated: was service-layer sums 28 -> 34 (delta 6). Now engine-derived:
     # the +6 production delta is blended through the SEWING node, so the engine
-    # commitable shifts 147 -> 157 (delta 10).
-    assert body["baseline_lead_time_days"] == 147
-    assert body["updated_lead_time_days"] == 157
+    # commitable shifts 124 -> 134 (delta 10).
+    assert body["baseline_lead_time_days"] == 124
+    assert body["updated_lead_time_days"] == 134
     assert body["delta_days"] == 10
     assert body["applied_events"][0]["applied"] is True
 

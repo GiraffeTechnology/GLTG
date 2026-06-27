@@ -35,10 +35,18 @@ class ApparelOrderMapper:
 
         for spec in node_specs:
             node_type: ApparelNodeType = spec["node_type"]
-            baseline = get_baseline(node_type, order.quantity)
 
             # Find best participant for this node type
             participant = self._find_participant(order, node_type)
+
+            # SEWING baseline is capacity-bound when the factory's capacity is
+            # known (DEFECT-03), so resolve the participant before the baseline.
+            capacity = None
+            if node_type == ApparelNodeType.SEWING and participant is not None:
+                cap = participant.get_capability(node_type)
+                capacity = (cap.capacity_per_day if cap and cap.capacity_per_day
+                            else participant.capacity_per_day)
+            baseline = get_baseline(node_type, order.quantity, capacity)
 
             # Baseline evidence item
             evidence = EvidenceItem(

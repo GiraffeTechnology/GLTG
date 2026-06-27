@@ -20,6 +20,21 @@ def _ev_id() -> str:
     return f"ev_{uuid.uuid4().hex[:8]}"
 
 
+def _production_capacity(
+    node_type: ApparelNodeType, participant: ParticipantProfile | None
+) -> int | None:
+    """Daily capacity that bounds the SEWING (production) node, if known.
+
+    Prefers the SEWING capability's own throughput, else the participant's
+    aggregate capacity. Only SEWING is capacity-bound (DEFECT-03)."""
+    if node_type != ApparelNodeType.SEWING or participant is None:
+        return None
+    cap = participant.get_capability(node_type)
+    if cap is not None and cap.capacity_per_day:
+        return cap.capacity_per_day
+    return participant.capacity_per_day
+
+
 class DurationEstimator:
     """Computes a final DurationEstimate for a node using the evidence hierarchy.
 
@@ -45,7 +60,7 @@ class DurationEstimator:
         calendar: CalendarConfig | None = None,
     ) -> DurationEstimate:
         """Return a blended DurationEstimate for this node."""
-        baseline = get_baseline(node_type, quantity)
+        baseline = get_baseline(node_type, quantity, _production_capacity(node_type, participant))
         evidence_items: list[EvidenceItem] = []
         components: list[tuple[float, EvidenceSourceType, float]] = []  # (days, source, conf)
 

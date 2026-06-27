@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from ..models.enums import ApparelNodeType
 
 # Default baselines for each node type.
@@ -44,10 +46,21 @@ _DEFAULT_BASELINE: dict[str, float] = dict(p50=2, p80=3, p90=5, min=1, max=7)
 _SEWING_DAYS_PER_1000 = 7.0
 
 
-def _sewing_baseline(quantity: int) -> dict[str, float]:
-    """Scale sewing baseline proportionally to order quantity."""
-    ratio = max(quantity, 1) / 1000.0
-    p50 = max(1.0, round(_SEWING_DAYS_PER_1000 * ratio, 1))
+def _sewing_baseline(quantity: int, capacity_per_day: int | None = None) -> dict[str, float]:
+    """Sewing (production) baseline in days.
+
+    DEFECT-03: when a factory's daily capacity is known, production time is
+    capacity-bound — ``ceil(quantity / capacity_per_day)`` — so a faster factory
+    yields a genuinely shorter SEWING node. Without capacity, fall back to the
+    quantity-scaled category proxy (7 days per 1,000 pcs). The category proxy
+    encodes a slow implied throughput, so a real fast factory must not be floored
+    by it; the known capacity takes precedence outright.
+    """
+    if capacity_per_day and capacity_per_day > 0:
+        p50 = max(1.0, float(math.ceil(max(quantity, 1) / capacity_per_day)))
+    else:
+        ratio = max(quantity, 1) / 1000.0
+        p50 = max(1.0, round(_SEWING_DAYS_PER_1000 * ratio, 1))
     p80 = max(1.0, round(p50 * 1.4, 1))
     p90 = max(1.0, round(p50 * 2.0, 1))
     min_d = max(1.0, round(p50 * 0.7, 1))
@@ -55,11 +68,14 @@ def _sewing_baseline(quantity: int) -> dict[str, float]:
     return dict(p50=p50, p80=p80, p90=p90, min=min_d, max=max_d)
 
 
-def get_baseline(node_type: ApparelNodeType, quantity: int = 1000) -> dict[str, float]:
+def get_baseline(
+    node_type: ApparelNodeType, quantity: int = 1000, capacity_per_day: int | None = None
+) -> dict[str, float]:
     """Return baseline lead-time stats (days) for a node type.
 
-    For SEWING, duration scales with quantity.
+    For SEWING, duration scales with quantity and, when known, with the
+    producing factory's daily capacity (DEFECT-03).
     """
     if node_type == ApparelNodeType.SEWING:
-        return _sewing_baseline(quantity)
+        return _sewing_baseline(quantity, capacity_per_day)
     return dict(_STATIC_BASELINES.get(node_type, _DEFAULT_BASELINE))
