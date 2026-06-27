@@ -1,0 +1,16 @@
+services:
+  gltg:
+    build: .
+    image: giraffe-gltg:latest
+    ports:
+      - "8090:8090"
+    environment:
+      GLTG_HOST: 0.0.0.0
+      GLTG_PORT: 8090
+      GLTG_API_VERSION: v1
+      GLTG_LOG_LEVEL: INFO
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8090/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
