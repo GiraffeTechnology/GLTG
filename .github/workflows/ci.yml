@@ -1,0 +1,79 @@
+name: GLTG CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    name: Test GLTG
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+
+      - name: Unit + API tests
+        run: pytest -q
+
+      - name: API edge cases (0/1/2/3+ suppliers)
+        run: python scripts/run_api_edge_cases.py
+
+      - name: Determinism (5x)
+        run: python scripts/verify_gltg_5x.py
+
+      - name: Zero/one/two supplier cases
+        run: python scripts/run_zero_one_two_supplier_cases.py
+
+      - name: Start API server
+        run: |
+          nohup uvicorn gltg.api.main:app --host 0.0.0.0 --port 8090 > server.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8090/health > /dev/null; then
+              echo "server up"; break
+            fi
+            sleep 1
+          done
+
+      - name: GET /health
+        run: |
+          curl -sf http://localhost:8090/health | tee /dev/stderr | grep -q '"status":"ok"'
+
+      - name: GET /version
+        run: |
+          curl -sf http://localhost:8090/version | tee /dev/stderr | grep -q '"service":"gltg"'
+
+      - name: POST /v1/lead-time/estimate
+        run: |
+          curl -sf http://localhost:8090/v1/lead-time/estimate \
+            -H 'content-type: application/json' \
+            -d '{"order":{"product_type":"apparel","quantity":10000,"deadline_days":60},
+                 "suppliers":[{"supplier_id":"M1","capacity_per_day":800,"material_ready_days":5,
+                 "production_days":14,"qc_days":2,"logistics_days":7,"confidence":0.8}]}' \
+            | tee /dev/stderr | grep -q '"estimated_lead_time_days":28'
+
+      - name: POST /v1/paths/enumerate
+        run: |
+          curl -sf http://localhost:8090/v1/paths/enumerate \
+            -H 'content-type: application/json' \
+            -d '{"order":{"quantity":10000},"suppliers":[
+                 {"supplier_id":"A","material_ready_days":5,"production_days":14,"qc_days":2,"logistics_days":7,"confidence":0.8},
+                 {"supplier_id":"B","material_ready_days":5,"production_days":10,"qc_days":2,"logistics_days":7,"confidence":0.8}]}' \
+            | tee /dev/stderr | grep -q '"paths"'
+
+      - name: POST /v1/reforecast
+        run: |
+          curl -sf http://localhost:8090/v1/reforecast \
+            -H 'content-type: application/json' \
+            -d '{"order":{"quantity":10000},"suppliers":[
+                 {"supplier_id":"M1","capacity_per_day":800,"material_ready_days":5,
+                 "production_days":14,"qc_days":2,"logistics_days":7,"confidence":0.8}],
+                 "events":[{"supplier_id":"M1","production_days_delta":6}]}' \
+            | tee /dev/stderr | grep -q '"updated_lead_time_days"'
