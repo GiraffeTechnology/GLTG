@@ -25,12 +25,17 @@ from ..api.schemas import (
     SupplierInput,
     Warning,
 )
-from .lead_time_service import _anchor_date, _capacity_adjusted_production_days
+from .lead_time_service import (
+    _anchor_date,
+    _capacity_adjusted_production_days,
+    _maybe_apply_baselines,
+)
 
 
 def _single_source_path(
     supplier: SupplierInput, order: OrderInput, anchor: date
 ) -> tuple[float, float, date, bool]:
+    supplier = _maybe_apply_baselines(supplier, order)
     prod = _capacity_adjusted_production_days(supplier, order.quantity)
     total = supplier.material_ready_days + prod + supplier.qc_days + supplier.logistics_days
     earliest = anchor + timedelta(days=int(math.ceil(total)))

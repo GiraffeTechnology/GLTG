@@ -26,6 +26,11 @@ class OrderInput(BaseModel):
     target_delivery_date: date | None = None
     # Optional explicit anchor for deterministic date math; defaults to today.
     evaluation_date: date | None = None
+    # Requirement-level hints used to synthesize baseline stage estimates when a
+    # supplier omits explicit stage durations (keeps all baseline math in GLTG).
+    destination: str | None = None
+    logistics_mode: str | None = None  # "sea" | "air"
+    deadline_days: int | None = None
 
 
 class SupplierInput(BaseModel):
@@ -86,6 +91,13 @@ class LeadTimeEstimateResponse(BaseModel):
     feasible: bool = False
     supplier_count: int = 0
     selected_supplier_id: str | None = None
+    # Deterministic confidence bands derived from the selected supplier's
+    # confidence (GLTG owns these; consumers must not recompute them).
+    p50_days: float | None = None
+    p80_days: float | None = None
+    p90_days: float | None = None
+    minimum_feasible_days: float | None = None
+    risk_level: str = "unknown"  # low | medium | high | unknown
     warnings: list[Warning] = []
     calculation_trace: list[SupplierTrace] = []
 

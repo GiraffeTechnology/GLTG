@@ -19,6 +19,7 @@ from ..api.schemas import (
     SupplierTrace,
     Warning,
 )
+from .baselines import baseline_stage_days
 
 
 def _capacity_adjusted_production_days(supplier: SupplierInput, quantity: int) -> float:
@@ -35,9 +36,33 @@ def _capacity_adjusted_production_days(supplier: SupplierInput, quantity: int) -
     return float(stated)
 
 
+def _maybe_apply_baselines(supplier: SupplierInput, order: OrderInput) -> SupplierInput:
+    """Fill stage durations from GLTG baselines when a supplier provides none.
+
+    A supplier with all stage days at 0 is treated as requirement-level input;
+    GLTG synthesizes the stages so consumers never compute them locally.
+    """
+    has_stage_data = any(
+        v > 0
+        for v in (
+            supplier.material_ready_days,
+            supplier.production_days,
+            supplier.qc_days,
+            supplier.logistics_days,
+        )
+    )
+    if has_stage_data:
+        return supplier
+    stages = baseline_stage_days(
+        order.quantity, order.destination, order.logistics_mode, supplier.capacity_per_day
+    )
+    return supplier.model_copy(update=stages)
+
+
 def _supplier_trace(
     supplier: SupplierInput, order: OrderInput, anchor: date
 ) -> SupplierTrace:
+    supplier = _maybe_apply_baselines(supplier, order)
     prod = _capacity_adjusted_production_days(supplier, order.quantity)
     total = (
         supplier.material_ready_days
@@ -62,6 +87,42 @@ def _supplier_trace(
 
 def _anchor_date(order: OrderInput) -> date:
     return order.evaluation_date or date.today()
+
+
+def _percentile_bands(total: float, confidence: float) -> tuple[float, float, float, float]:
+    """Deterministic p50/p80/p90 + optimistic minimum from a base estimate.
+
+    Lower confidence widens the bands. p50 is the base estimate; p80/p90 add
+    uncertainty buffers; minimum_feasible is an optimistic pull-in.
+    """
+    uncertainty = max(0.0, 1.0 - confidence)
+    p50 = float(round(total))
+    p80 = float(math.ceil(total * (1.0 + 0.10 + 0.20 * uncertainty)))
+    p90 = float(math.ceil(total * (1.0 + 0.20 + 0.35 * uncertainty)))
+    minimum = float(math.floor(total * 0.85))
+    return p50, p80, p90, minimum
+
+
+def _risk_level(
+    total: float, p80: float, confidence: float, anchor: date, target: date | None
+) -> str:
+    """Deadline risk: high if median misses target, medium if p80 misses, else low.
+
+    Without a target, risk is derived from confidence alone.
+    """
+    if target is None:
+        if confidence >= 0.75:
+            return "low"
+        if confidence >= 0.5:
+            return "medium"
+        return "high"
+    median_date = anchor + timedelta(days=int(math.ceil(total)))
+    p80_date = anchor + timedelta(days=int(math.ceil(p80)))
+    if median_date > target:
+        return "high"
+    if p80_date > target:
+        return "medium"
+    return "low"
 
 
 def estimate(
@@ -147,6 +208,10 @@ def estimate(
         )
 
     earliest = anchor + timedelta(days=int(math.ceil(selected.total_lead_time_days)))
+    p50, p80, p90, minimum = _percentile_bands(selected.total_lead_time_days, selected.confidence)
+    risk = _risk_level(
+        selected.total_lead_time_days, p80, selected.confidence, anchor, order.target_delivery_date
+    )
     return LeadTimeEstimateResponse(
         status="ok",
         estimated_lead_time_days=selected.total_lead_time_days,
@@ -154,6 +219,11 @@ def estimate(
         feasible=selected.feasible,
         supplier_count=supplier_count,
         selected_supplier_id=selected.supplier_id,
+        p50_days=p50,
+        p80_days=p80,
+        p90_days=p90,
+        minimum_feasible_days=minimum,
+        risk_level=risk,
         warnings=warnings,
         calculation_trace=traces,
     )
