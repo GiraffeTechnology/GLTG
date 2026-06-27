@@ -6,8 +6,10 @@ Run locally:
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
+from ..errors import GLTGError
 from ..version import __version__
 from .routes import router
 
@@ -22,6 +24,23 @@ def create_app() -> FastAPI:
         ),
         version=__version__,
     )
+
+    # Unified error contract (DEFECT-05). Domain errors are client-actionable
+    # (422); anything unexpected is a structured 500 rather than a bare HTML page.
+    @app.exception_handler(GLTGError)
+    async def _gltg_error_handler(request: Request, exc: GLTGError) -> JSONResponse:
+        return JSONResponse(
+            status_code=422,
+            content={"error": str(exc), "code": type(exc).__name__},
+        )
+
+    @app.exception_handler(Exception)
+    async def _unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Internal server error", "code": "INTERNAL_ERROR"},
+        )
+
     app.include_router(router)
     return app
 
