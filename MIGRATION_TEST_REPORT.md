@@ -9,6 +9,33 @@ embedded GLTG / lead-time engines from all three consumer repositories.
 - giraffe-agent, abcdYi, aivan: **no embedded GLTG engine code**; all call GLTG
   through `GLTG_API_BASE_URL` via a thin HTTP client; no silent local fallback.
 
+## GitHub Actions CI status (actual)
+
+All four PRs are open, non-draft, and have **green** CI on their latest commit:
+
+| Repo | PR | Latest commit | Workflow | Conclusion | Run |
+|------|----|---------------|----------|------------|-----|
+| GLTG | [#1](https://github.com/GiraffeTechnology/GLTG/pull/1) | `f7a9717` | GLTG CI | ✅ success | [run 28285045362](https://github.com/GiraffeTechnology/GLTG/actions/runs/28285045362) |
+| giraffe-agent | [#30](https://github.com/GiraffeTechnology/giraffe-agent/pull/30) | `168e6e0` | CI (B-side, M-side Role-Switching, BM DB, Lead Time Path Model, AIVAN ClawHub Plugin) | ✅ success | [run 28285044946](https://github.com/GiraffeTechnology/giraffe-agent/actions/runs/28285044946) |
+| abcdYi | [#19](https://github.com/GiraffeTechnology/abcdYi/pull/19) | `3c08aa5` | CI (B-side, M-side Role-Switching, BM DB, Lead Time Path Model) | ✅ success | [run 28285045363](https://github.com/GiraffeTechnology/abcdYi/actions/runs/28285045363) |
+| aivan | [#13](https://github.com/GiraffeTechnology/aivan/pull/13) | `7307dd8` | CI | ✅ success | [run 28285045763](https://github.com/GiraffeTechnology/aivan/actions/runs/28285045763) |
+
+The GLTG CI run exercised every required step: `pip install -e ".[dev]"`,
+`pytest -q`, `run_api_edge_cases.py`, `verify_gltg_5x.py`,
+`run_zero_one_two_supplier_cases.py`, then started uvicorn and verified
+`GET /health`, `GET /version`, `POST /v1/lead-time/estimate`,
+`POST /v1/paths/enumerate`, `POST /v1/reforecast` — all green.
+
+The previously-failing consumer jobs are now green:
+- giraffe-agent: the obsolete `GLTG CI / Test GLTG` workflow was removed (it
+  tested the deleted vendored `GLTG/` folder); `M-side Role-Switching Tests`,
+  `Lead Time Path Model`, and `AIVAN ClawHub Plugin` pass.
+- abcdYi: `M-side Role-Switching Tests` and `Lead Time Path Model` pass.
+
+GLTG-backed E2E scripts run against an in-process GLTG mock server
+(`tests/ci_gltg_server.py`, test infrastructure only) so CI needs no external
+service or secrets; production still talks to the real GLTG service.
+
 ## Environment
 
 - Python 3.11
