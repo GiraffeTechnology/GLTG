@@ -5,10 +5,10 @@ the deterministic graph engine (`gltg.engine.LeadTimeGraphEngine`). Every `/v1`
 endpoint routes through here so that the engine — not the legacy summed-stage
 service — is the source of truth for dates, critical path, and options.
 
-The legacy `lead_time_service` / `path_enumeration_service` / `reforecast_service`
-modules are retained but demoted to input-prep helpers: this adapter reuses their
-capacity-floor, destination/air-sea transit, baseline-synthesis, and event-apply
-logic to shape the **engine input**, then lets the engine compute the result.
+The retired summed-stage service layer left only its input-prep logic (now in
+`input_prep`): this adapter reuses the capacity-floor, destination/air-sea
+transit, baseline-synthesis, and event-apply helpers to shape the **engine
+input**, then lets the engine compute the result.
 
 See `docs/defect-01-schema-mapping.md` for the full mapping.
 """
@@ -35,13 +35,13 @@ from ..api.schemas import (
     SupplierTrace,
     Warning,
 )
-from .lead_time_service import (
-    _anchor_date,
-    _capacity_adjusted_production_days,
-    _effective_target,
-    _maybe_apply_baselines,
+from .input_prep import (
+    anchor_date as _anchor_date,
+    apply_events as _apply_events,
+    capacity_adjusted_production_days as _capacity_adjusted_production_days,
+    effective_target as _effective_target,
+    maybe_apply_baselines as _maybe_apply_baselines,
 )
-from .reforecast_service import _apply_events
 
 _engine = LeadTimeGraphEngine()
 
