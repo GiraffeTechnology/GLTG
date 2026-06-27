@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from ..models.duration import DurationEstimate
 from ..models.enums import ApparelNodeType, EvidenceSourceType
@@ -72,7 +72,7 @@ class DurationEstimator:
             description=f"Category baseline p50 for {node_type.value}",
             value=baseline,
             confidence=0.4,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         ))
 
         # --- 2. Supplier capability baseline ---
@@ -87,7 +87,7 @@ class DurationEstimator:
                     description=f"{participant.name} typical lead days from capability profile",
                     value=cap.typical_lead_days,
                     confidence=0.5,
-                    created_at=datetime.utcnow(),
+                    created_at=datetime.now(timezone.utc),
                 ))
 
         # --- 3. Supplier response (confirmed quote) ---
@@ -100,7 +100,7 @@ class DurationEstimator:
                 description=f"Supplier confirmed {supplier_response.confirmed_days} days",
                 value=supplier_response.confirmed_days,
                 confidence=0.75,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
             ))
 
         # --- 4. Historical memory ---
@@ -119,7 +119,7 @@ class DurationEstimator:
                     description=f"Memory-adjusted from {mem['record_count']} past records",
                     value={"days": mem_days, "on_time_rate": mem.get("on_time_rate")},
                     confidence=mem_conf,
-                    created_at=datetime.utcnow(),
+                    created_at=datetime.now(timezone.utc),
                 ))
 
         # --- 5. Progress events (actual progress adjustments) ---
@@ -136,7 +136,7 @@ class DurationEstimator:
                     description=f"Actual remaining days from progress event {latest.event_id}",
                     value=remaining,
                     confidence=0.95,
-                    created_at=datetime.utcnow(),
+                    created_at=datetime.now(timezone.utc),
                 ))
 
         # --- Blend ---

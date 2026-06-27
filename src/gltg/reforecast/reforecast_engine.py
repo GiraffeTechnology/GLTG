@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 from ..models.packet import DeliveryFeasibilityPacket
 from ..models.path import DeliveryPathOption
@@ -141,7 +141,7 @@ class ReforecastEngine:
         packet.bottleneck_nodes = best.bottleneck_nodes
         packet.risk_flags = packet.risk_flags + new_flags
         packet.acceleration_options = acceleration
-        packet.generated_at = datetime.utcnow()
+        packet.generated_at = datetime.now(timezone.utc)
 
         return packet
 
@@ -161,7 +161,7 @@ class ReforecastEngine:
 
         return ReforecastResult(
             order_id=order_id,
-            reforecast_at=datetime.utcnow(),
+            reforecast_at=datetime.now(timezone.utc),
             previous_commitable_date=previous_commitable,
             new_commitable_date=new_commitable,
             delta_days=delta,

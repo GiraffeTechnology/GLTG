@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from ..models.enums import ApparelNodeType, ConfidenceLevel, EvidenceSourceType
 from ..models.evidence import EvidenceItem
@@ -55,7 +55,7 @@ class ApparelOrderMapper:
                 description=f"Category baseline for {node_type.value}",
                 value=baseline,
                 confidence=0.4,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
             )
 
             from ..models.duration import DurationEstimate
