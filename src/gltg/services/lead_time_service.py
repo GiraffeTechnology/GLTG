@@ -59,6 +59,20 @@ def _maybe_apply_baselines(supplier: SupplierInput, order: OrderInput) -> Suppli
     return supplier.model_copy(update=stages)
 
 
+def _effective_target(order: OrderInput, anchor: date) -> date | None:
+    """The deadline GLTG measures feasibility against.
+
+    Prefers an explicit ``target_delivery_date``; otherwise derives one from
+    ``deadline_days`` relative to the evaluation anchor. This ensures
+    ``deadline_days`` is never silently ignored.
+    """
+    if order.target_delivery_date is not None:
+        return order.target_delivery_date
+    if order.deadline_days is not None:
+        return anchor + timedelta(days=int(order.deadline_days))
+    return None
+
+
 def _supplier_trace(
     supplier: SupplierInput, order: OrderInput, anchor: date
 ) -> SupplierTrace:
@@ -71,7 +85,8 @@ def _supplier_trace(
         + supplier.logistics_days
     )
     earliest = anchor + timedelta(days=int(math.ceil(total)))
-    feasible = order.target_delivery_date is None or earliest <= order.target_delivery_date
+    target = _effective_target(order, anchor)
+    feasible = target is None or earliest <= target
     return SupplierTrace(
         supplier_id=supplier.supplier_id,
         material_ready_days=supplier.material_ready_days,
@@ -196,13 +211,14 @@ def estimate(
             )
         )
 
-    if not selected.feasible and order.target_delivery_date is not None:
+    target = _effective_target(order, anchor)
+    if not selected.feasible and target is not None:
         warnings.append(
             Warning(
                 code="TARGET_NOT_MET",
                 message=(
-                    "No supplier can meet the target delivery date "
-                    f"{order.target_delivery_date.isoformat()}."
+                    "No supplier can meet the required delivery date "
+                    f"{target.isoformat()}."
                 ),
             )
         )
@@ -210,7 +226,7 @@ def estimate(
     earliest = anchor + timedelta(days=int(math.ceil(selected.total_lead_time_days)))
     p50, p80, p90, minimum = _percentile_bands(selected.total_lead_time_days, selected.confidence)
     risk = _risk_level(
-        selected.total_lead_time_days, p80, selected.confidence, anchor, order.target_delivery_date
+        selected.total_lead_time_days, p80, selected.confidence, anchor, target
     )
     return LeadTimeEstimateResponse(
         status="ok",

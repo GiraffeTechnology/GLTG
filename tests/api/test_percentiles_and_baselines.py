@@ -76,3 +76,30 @@ def test_air_logistics_faster_than_sea():
         json={"order": {"quantity": 1000, "destination": "London", "logistics_mode": "air"}, "suppliers": [{"supplier_id": "r"}]},
     ).json()
     assert air["estimated_lead_time_days"] < sea["estimated_lead_time_days"]
+
+
+def test_deadline_days_drives_feasibility_without_target_date():
+    """deadline_days must be honored when target_delivery_date is absent."""
+    supplier = {
+        "supplier_id": "M1", "capacity_per_day": 800, "material_ready_days": 5,
+        "production_days": 14, "qc_days": 2, "logistics_days": 7, "confidence": 0.8,
+    }
+    # total = 28 days. deadline_days=20 -> infeasible; deadline_days=60 -> feasible.
+    tight = client.post("/v1/lead-time/estimate", json={
+        "order": {"quantity": 10000, "deadline_days": 20}, "suppliers": [supplier]}).json()
+    assert tight["feasible"] is False
+    assert any(w["code"] == "TARGET_NOT_MET" for w in tight["warnings"])
+    assert tight["risk_level"] == "high"
+
+    ok = client.post("/v1/lead-time/estimate", json={
+        "order": {"quantity": 10000, "deadline_days": 60}, "suppliers": [supplier]}).json()
+    assert ok["feasible"] is True
+    assert ok["risk_level"] in {"low", "medium"}
+
+
+def test_deadline_days_drives_path_feasibility():
+    supplier = {"supplier_id": "M1", "material_ready_days": 5, "production_days": 14,
+                "qc_days": 2, "logistics_days": 7, "confidence": 0.8}
+    res = client.post("/v1/paths/enumerate", json={
+        "order": {"quantity": 1000, "deadline_days": 10}, "suppliers": [supplier]}).json()
+    assert all(p["feasible"] is False for p in res["paths"])

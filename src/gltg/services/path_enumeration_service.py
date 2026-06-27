@@ -28,6 +28,7 @@ from ..api.schemas import (
 from .lead_time_service import (
     _anchor_date,
     _capacity_adjusted_production_days,
+    _effective_target,
     _maybe_apply_baselines,
 )
 
@@ -39,7 +40,8 @@ def _single_source_path(
     prod = _capacity_adjusted_production_days(supplier, order.quantity)
     total = supplier.material_ready_days + prod + supplier.qc_days + supplier.logistics_days
     earliest = anchor + timedelta(days=int(math.ceil(total)))
-    feasible = order.target_delivery_date is None or earliest <= order.target_delivery_date
+    target = _effective_target(order, anchor)
+    feasible = target is None or earliest <= target
     return total, supplier.confidence, earliest, feasible
 
 
@@ -62,7 +64,8 @@ def _parallel_split_path(
     mean_conf = sum(s.confidence for s in suppliers) / len(suppliers)
     confidence = round(mean_conf * 0.95, 4)
     earliest = anchor + timedelta(days=int(math.ceil(total)))
-    feasible = order.target_delivery_date is None or earliest <= order.target_delivery_date
+    target = _effective_target(order, anchor)
+    feasible = target is None or earliest <= target
     return total, confidence, earliest, feasible
 
 
