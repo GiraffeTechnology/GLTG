@@ -36,3 +36,9 @@ class DeliveryPathOption(BaseModel):
     recommendation_reason: str | None = None
     evidence_summary: list[EvidenceItem] = []
     infeasibility_reason: str | None = None
+    # Subtracted from the composite score for tiebreaking only (never reorders
+    # ahead of committable_date). Derived from participants' response-behaviour signals.
+    response_penalty: float = 0.0
+    # Real-time supplier-state markers, keyed by participant_id, surfaced to the
+    # buyer as warnings. Aggregated from every participant in the combination.
+    supplier_risk_flags: dict[str, list[str]] = {}

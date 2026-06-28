@@ -156,6 +156,43 @@ def test_paths_zero_suppliers():
     assert any(w["code"] == "NO_SUPPLIERS" for w in body["warnings"])
 
 
+def test_paths_supplier_state_overrides_surface_flags_and_rank_below():
+    """A slow/no-response supplier carries its risk flags and ranks below an
+    equal-date peer once a real-time override is supplied."""
+    payload = {
+        "order": {"quantity": 10000, "evaluation_date": "2026-06-27"},
+        "suppliers": [_supplier("Fast"), _supplier("Slow")],
+        "constraints": {"allow_partial_suppliers": False},
+        "supplier_state_overrides": {
+            "Slow": {
+                "response_speed_score": 0.0,
+                "completeness_score": 0.0,
+                "risk_flags": ["NO_RESPONSE", "SLOW_RESPONSE"],
+            }
+        },
+    }
+    body = client.post("/v1/paths/enumerate", json=payload).json()
+    by_supplier = {p["supplier_ids"][0]: p for p in body["paths"]}
+    # Same stage inputs -> identical lead time; the penalty breaks the tie.
+    assert by_supplier["Fast"]["estimated_lead_time_days"] == by_supplier["Slow"]["estimated_lead_time_days"]
+    assert by_supplier["Fast"]["rank"] < by_supplier["Slow"]["rank"]
+    assert by_supplier["Slow"]["supplier_risk_flags"] == {"Slow": ["NO_RESPONSE", "SLOW_RESPONSE"]}
+    assert by_supplier["Fast"]["supplier_risk_flags"] == {}
+
+
+def test_estimate_capacity_override_slows_committable_date():
+    """available_capacity_per_day shrinks throughput, pushing the committable date later."""
+    base_payload = {
+        "order": {"quantity": 10000, "evaluation_date": "2026-06-27"},
+        "suppliers": [_supplier("A", capacity_per_day=5000)],
+    }
+    base = client.post("/v1/lead-time/estimate", json=base_payload).json()
+    override_payload = dict(base_payload)
+    override_payload["supplier_state_overrides"] = {"A": {"available_capacity_per_day": 200}}
+    constrained = client.post("/v1/lead-time/estimate", json=override_payload).json()
+    assert constrained["committable_date"] > base["committable_date"]
+
+
 def test_reforecast_applies_delta_without_mutating_baseline():
     suppliers = [_supplier("M1")]
     payload = {

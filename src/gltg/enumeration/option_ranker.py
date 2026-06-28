@@ -111,6 +111,13 @@ class OptionRanker:
             s_complex = 0.0
 
         total = s_otp + s_evidence + s_reliability + s_margin + s_delay + s_qc + s_missing + s_complex
+
+        # Real-time response-behaviour penalty: lowers the composite score so that
+        # among options with the same committable_date the slower/less-complete
+        # responder ranks below. committable_date stays the primary sort key
+        # (set in rank()), so this only moves ties.
+        total -= option.response_penalty
+
         return max(0.0, total)
 
     def _assign_labels(self, options: list[DeliveryPathOption]) -> list[OptionLabel | None]:

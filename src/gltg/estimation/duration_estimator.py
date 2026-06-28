@@ -25,14 +25,34 @@ def _production_capacity(
 ) -> int | None:
     """Daily capacity that bounds the SEWING (production) node, if known.
 
-    Prefers the SEWING capability's own throughput, else the participant's
+    A real-time ``state_override.available_capacity_per_day`` wins outright over
+    historical capacity: it is the supplier's stated current throughput for new
+    orders and must replace the track-record value, not be floored by it. Failing
+    that, prefer the SEWING capability's own throughput, else the participant's
     aggregate capacity. Only SEWING is capacity-bound (DEFECT-03)."""
     if node_type != ApparelNodeType.SEWING or participant is None:
         return None
+    override = participant.state_override
+    if override is not None and override.available_capacity_per_day:
+        return override.available_capacity_per_day
     cap = participant.get_capability(node_type)
     if cap is not None and cap.capacity_per_day:
         return cap.capacity_per_day
     return participant.capacity_per_day
+
+
+def _load_factor(
+    node_type: ApparelNodeType, participant: ParticipantProfile | None
+) -> float:
+    """Non-production lead-time multiplier from the participant's state signal.
+
+    Returns 1.0 (no-op) for SEWING or when no override is present."""
+    if node_type == ApparelNodeType.SEWING or participant is None:
+        return 1.0
+    override = participant.state_override
+    if override is None:
+        return 1.0
+    return override.load_factor
 
 
 class DurationEstimator:
@@ -143,6 +163,14 @@ class DurationEstimator:
         blended_p50 = self._weighter.blend(components)
         if blended_p50 is None:
             blended_p50 = baseline["p50"]
+
+        # Real-time load factor: a busy supplier's non-production stages stretch.
+        # Production (SEWING) is already capacity-bound, so the factor skips it to
+        # avoid double-counting congestion. p80/p90/min/max derive proportionally
+        # from blended_p50 below, so scaling it here scales the whole percentile band.
+        load_factor = _load_factor(node_type, participant)
+        if load_factor != 1.0:
+            blended_p50 *= load_factor
 
         # Scale p80 / p90 proportionally from baseline ratios
         ratio_80 = baseline["p80"] / max(baseline["p50"], 0.1)

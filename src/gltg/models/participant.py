@@ -14,6 +14,27 @@ if TYPE_CHECKING:
     pass
 
 
+class SupplierStateOverride(BaseModel):
+    """Real-time supplier-state signal applied on top of historical baselines.
+
+    Sourced upstream by aivan's supplier-signal layer; GLTG treats every field as
+    a given input and never recomputes it. All defaults are no-ops so an order
+    carrying no override schedules and ranks identically to the pre-signal engine
+    (regression guard -- see ``test_no_override_produces_identical_result``).
+    """
+
+    # Active signals (LLM-extracted upstream).
+    available_capacity_per_day: int | None = None  # overrides historical capacity for production
+    earliest_available_date: date | None = None     # supplier cannot start this order before here
+    # Lead-time multiplier for the supplier's non-production stages (1.0 = no change).
+    load_factor: float = 1.0
+    # Passive behaviour signals; drive the ranking tiebreak penalty (0.0-1.0).
+    response_speed_score: float = 1.0
+    completeness_score: float = 1.0
+    # Opaque markers surfaced to the buyer; never alter the date/score math.
+    risk_flags: list[str] = []
+
+
 class ParticipantProfile(BaseModel):
     """A supply-chain participant (factory, supplier, logistics provider, etc.)."""
 
@@ -28,6 +49,8 @@ class ParticipantProfile(BaseModel):
     reliability_score: float | None = None   # 0.0-1.0
     quality_score: float | None = None       # 0.0-1.0
     on_time_delivery_rate: float | None = None  # 0.0-1.0
+    # Optional real-time state signal; absent -> pure historical baseline behaviour.
+    state_override: SupplierStateOverride | None = None
     metadata: dict[str, Any] = {}
 
     def can_handle(self, node_type: ApparelNodeType) -> bool:

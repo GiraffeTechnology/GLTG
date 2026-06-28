@@ -6,7 +6,11 @@ from .models.graph import LeadTimeGraph
 from .models.node import LeadTimeNode
 from .models.order import ApparelOrderInput
 from .models.packet import DeliveryFeasibilityPacket
-from .models.participant import ParticipantProfile, SupplierMemoryRecord
+from .models.participant import (
+    ParticipantProfile,
+    SupplierMemoryRecord,
+    SupplierStateOverride,
+)
 from .models.reforecast import ProgressEvent
 from .models.risk import RiskFlag
 from .packets.decision_packet import DecisionPacket
@@ -24,5 +28,6 @@ __all__ = [
     "ProgressEvent",
     "RiskFlag",
     "SupplierMemoryRecord",
+    "SupplierStateOverride",
     "__version__",
 ]

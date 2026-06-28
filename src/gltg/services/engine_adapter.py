@@ -22,7 +22,7 @@ from ..models.capability import Capability
 from ..models.enums import ApparelNodeType, ParticipantType
 from ..models.order import ApparelOrderInput
 from ..models.packet import DeliveryFeasibilityPacket
-from ..models.participant import ParticipantProfile, SupplierResponse
+from ..models.participant import ParticipantProfile, SupplierResponse, SupplierStateOverride
 from ..api.schemas import (
     Constraints,
     DeliveryPath,
@@ -32,9 +32,13 @@ from ..api.schemas import (
     ReforecastEvent,
     ReforecastResponse,
     SupplierInput,
+    SupplierStateOverrideInput,
     SupplierTrace,
     Warning,
 )
+
+# Real-time signals keyed by supplier_id, as received from the HTTP request.
+StateOverrides = dict[str, SupplierStateOverrideInput] | None
 from .input_prep import (
     anchor_date as _anchor_date,
     apply_events as _apply_events,
@@ -79,6 +83,25 @@ def _effective_stage_days(order: OrderInput, supplier: SupplierInput) -> dict[Ap
     }
 
 
+def _map_override(inp: SupplierStateOverrideInput) -> SupplierStateOverride:
+    """Transport override DTO -> engine domain override (1:1 field map)."""
+    return SupplierStateOverride(
+        available_capacity_per_day=inp.available_capacity_per_day,
+        earliest_available_date=inp.earliest_available_date,
+        load_factor=inp.load_factor,
+        response_speed_score=inp.response_speed_score,
+        completeness_score=inp.completeness_score,
+        risk_flags=list(inp.risk_flags),
+    )
+
+
+def _effective_capacity(supplier: SupplierInput, override: SupplierStateOverride | None) -> int | None:
+    """Current available capacity wins over the supplier's stated historical one."""
+    if override is not None and override.available_capacity_per_day:
+        return override.available_capacity_per_day
+    return supplier.capacity_per_day
+
+
 def _participant_capabilities(pid: str, capacity_per_day: int | None) -> list[Capability]:
     return [
         Capability(
@@ -91,16 +114,32 @@ def _participant_capabilities(pid: str, capacity_per_day: int | None) -> list[Ca
 
 
 def _build_order_for_supplier(
-    order: OrderInput, supplier: SupplierInput, anchor: date
+    order: OrderInput,
+    supplier: SupplierInput,
+    anchor: date,
+    override: SupplierStateOverride | None = None,
 ) -> ApparelOrderInput:
-    """Construct a single-factory engine order for one supplier."""
+    """Construct a single-factory engine order for one supplier.
+
+    When a real-time override supplies current capacity, it replaces the stated
+    capacity for both the participant profile and the capacity-floored production
+    stage so the production days reflect today's throughput, not the track record."""
     pid = supplier.supplier_id
+    eff_capacity = _effective_capacity(supplier, override)
+    # Recompute stage days against the effective capacity (only differs when the
+    # override changed it), so the capacity floor uses the current value.
+    stage_supplier = (
+        supplier.model_copy(update={"capacity_per_day": eff_capacity})
+        if eff_capacity != supplier.capacity_per_day
+        else supplier
+    )
     participant = ParticipantProfile(
         participant_id=pid,
         name=supplier.name or pid,
         participant_type=ParticipantType.GARMENT_FACTORY,
-        capabilities=_participant_capabilities(pid, supplier.capacity_per_day),
-        capacity_per_day=supplier.capacity_per_day,
+        capabilities=_participant_capabilities(pid, eff_capacity),
+        capacity_per_day=eff_capacity,
+        state_override=override,
     )
     responses = [
         SupplierResponse(
@@ -109,7 +148,7 @@ def _build_order_for_supplier(
             node_type=nt,
             confirmed_days=days,
         )
-        for nt, days in _effective_stage_days(order, supplier).items()
+        for nt, days in _effective_stage_days(order, stage_supplier).items()
         if days > 0
     ]
     return ApparelOrderInput(
@@ -129,6 +168,21 @@ def _build_order_for_supplier(
 # --------------------------------------------------------------------------- #
 def _lead_days(d: date | None, anchor: date) -> float | None:
     return float((d - anchor).days) if d is not None else None
+
+
+def _best_option(packet: DeliveryFeasibilityPacket):
+    """The top-ranked option for this single-supplier packet, if any."""
+    return packet.options[0] if packet.options else None
+
+
+def _packet_response_penalty(packet: DeliveryFeasibilityPacket) -> float:
+    best = _best_option(packet)
+    return best.response_penalty if best is not None else 0.0
+
+
+def _packet_risk_flags(packet: DeliveryFeasibilityPacket) -> dict[str, list[str]]:
+    best = _best_option(packet)
+    return dict(best.supplier_risk_flags) if best is not None else {}
 
 
 def _is_feasible(packet: DeliveryFeasibilityPacket, target: date | None) -> bool:
@@ -176,13 +230,21 @@ def _supplier_trace(
 # --------------------------------------------------------------------------- #
 # /v1/lead-time/estimate
 # --------------------------------------------------------------------------- #
+def _overrides_by_id(overrides: StateOverrides) -> dict[str, SupplierStateOverride]:
+    return {sid: _map_override(o) for sid, o in (overrides or {}).items()}
+
+
 def estimate(
-    order: OrderInput, suppliers: list[SupplierInput], constraints: Constraints
+    order: OrderInput,
+    suppliers: list[SupplierInput],
+    constraints: Constraints,
+    overrides: StateOverrides = None,
 ) -> LeadTimeEstimateResponse:
     anchor = _anchor_date(order)
     target = _effective_target(order, anchor)
     warnings: list[Warning] = []
     supplier_count = len(suppliers)
+    override_map = _overrides_by_id(overrides)
 
     if supplier_count < constraints.min_supplier_count:
         warnings.append(Warning(
@@ -202,17 +264,22 @@ def estimate(
             warnings=warnings, calculation_trace=[],
         )
 
-    evaluated = [(s, _engine.evaluate(_build_order_for_supplier(order, s, anchor))) for s in suppliers]
+    evaluated = [
+        (s, _engine.evaluate(_build_order_for_supplier(order, s, anchor, override_map.get(s.supplier_id))))
+        for s in suppliers
+    ]
     traces = [_supplier_trace(order, s, anchor, p, target) for s, p in evaluated]
 
-    # Deterministic selection: feasible-first, shortest commitable lead time,
-    # highest stated confidence, then supplier_id.
+    # Deterministic selection: feasible-first, shortest commitable lead time, then
+    # the lower response-behaviour penalty (a slow/incomplete responder loses a
+    # tie), highest stated confidence, then supplier_id.
     def sort_key(item: tuple[SupplierInput, DeliveryFeasibilityPacket]) -> tuple:
         s, p = item
         lead = _lead_days(p.commitable_date, anchor)
         return (
             0 if _is_feasible(p, target) else 1,
             lead if lead is not None else float("inf"),
+            _packet_response_penalty(p),
             -s.confidence,
             s.supplier_id,
         )
@@ -254,6 +321,7 @@ def estimate(
         risk_adjusted_date=packet.risk_adjusted_latest_date,
         on_time_probability=packet.on_time_probability,
         feasibility=packet.status.value,
+        supplier_risk_flags=_packet_risk_flags(packet),
         warnings=warnings,
         calculation_trace=traces,
     )
@@ -289,17 +357,25 @@ def _path_from_packet(
         feasible=_is_feasible(packet, target),
         confidence=confidence,
         score=0.0,
+        supplier_risk_flags=_packet_risk_flags(packet),
         warnings=[],
     )
 
 
 def enumerate_paths(
-    order: OrderInput, suppliers: list[SupplierInput], constraints: Constraints
+    order: OrderInput,
+    suppliers: list[SupplierInput],
+    constraints: Constraints,
+    overrides: StateOverrides = None,
 ) -> PathEnumerateResponse:
     anchor = _anchor_date(order)
     target = _effective_target(order, anchor)
     warnings: list[Warning] = []
     supplier_count = len(suppliers)
+    override_map = _overrides_by_id(overrides)
+    # Per-path response penalty, keyed by path_id, drives the ranking tiebreak
+    # without leaking the internal score into the public path schema.
+    penalties: dict[str, float] = {}
 
     if supplier_count == 0:
         warnings.append(Warning(code="NO_SUPPLIERS", message="No suppliers provided; no paths to enumerate."))
@@ -312,26 +388,39 @@ def enumerate_paths(
 
     raw: list[DeliveryPath] = []
     for s in suppliers:
-        packet = _engine.evaluate(_build_order_for_supplier(order, s, anchor))
-        raw.append(_path_from_packet(
-            f"single:{s.supplier_id}", "SINGLE_SOURCE", [s.supplier_id], s.confidence, packet, anchor, target))
+        packet = _engine.evaluate(_build_order_for_supplier(order, s, anchor, override_map.get(s.supplier_id)))
+        path = _path_from_packet(
+            f"single:{s.supplier_id}", "SINGLE_SOURCE", [s.supplier_id], s.confidence, packet, anchor, target)
+        penalties[path.path_id] = _packet_response_penalty(packet)
+        raw.append(path)
 
     if supplier_count >= 2 and constraints.allow_partial_suppliers:
         combined = _combined_supplier(suppliers)
         packet = _engine.evaluate(_build_order_for_supplier(order, combined, anchor))
-        raw.append(_path_from_packet(
+        path = _path_from_packet(
             "parallel:all", "PARALLEL_SPLIT", sorted(s.supplier_id for s in suppliers),
-            combined.confidence, packet, anchor, target))
+            combined.confidence, packet, anchor, target)
+        penalties[path.path_id] = _packet_response_penalty(packet)
+        raw.append(path)
 
+    # committable lead time is primary; the response penalty breaks ties so a
+    # slow/incomplete (or non-responding) supplier ranks below an equal-date peer.
     def sort_key(p: DeliveryPath) -> tuple:
-        return (0 if p.feasible else 1, p.estimated_lead_time_days, -p.confidence, p.path_id)
+        return (
+            0 if p.feasible else 1,
+            p.estimated_lead_time_days,
+            penalties.get(p.path_id, 0.0),
+            -p.confidence,
+            p.path_id,
+        )
 
     ordered = sorted(raw, key=sort_key)
     best_lt = ordered[0].estimated_lead_time_days if ordered else 0.0
     for idx, p in enumerate(ordered, start=1):
         p.rank = idx
         speed = best_lt / p.estimated_lead_time_days if p.estimated_lead_time_days > 0 else 1.0
-        p.score = round(0.7 * speed + 0.3 * p.confidence, 4)
+        # Fold the response penalty into the published score too (kept >= 0).
+        p.score = round(max(0.0, 0.7 * speed + 0.3 * p.confidence - penalties.get(p.path_id, 0.0)), 4)
 
     return PathEnumerateResponse(status="ok", supplier_count=supplier_count, paths=ordered, warnings=warnings)
 

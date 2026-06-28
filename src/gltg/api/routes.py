@@ -36,7 +36,9 @@ def version() -> VersionResponse:
     tags=["lead-time"],
 )
 def estimate_lead_time(req: LeadTimeEstimateRequest) -> LeadTimeEstimateResponse:
-    return engine_adapter.estimate(req.order, req.suppliers, req.constraints)
+    return engine_adapter.estimate(
+        req.order, req.suppliers, req.constraints, req.supplier_state_overrides
+    )
 
 
 @router.post(
@@ -45,7 +47,9 @@ def estimate_lead_time(req: LeadTimeEstimateRequest) -> LeadTimeEstimateResponse
     tags=["paths"],
 )
 def enumerate_paths(req: PathEnumerateRequest) -> PathEnumerateResponse:
-    return engine_adapter.enumerate_paths(req.order, req.suppliers, req.constraints)
+    return engine_adapter.enumerate_paths(
+        req.order, req.suppliers, req.constraints, req.supplier_state_overrides
+    )
 
 
 @router.post(

@@ -54,6 +54,21 @@ class Constraints(BaseModel):
     currency: str = "USD"
 
 
+class SupplierStateOverrideInput(BaseModel):
+    """Real-time supplier-state signal for one supplier (all fields optional).
+
+    Mirrors ``gltg.models.SupplierStateOverride``. Omitting an override for a
+    supplier preserves the pure historical-baseline behaviour for it exactly.
+    """
+
+    available_capacity_per_day: int | None = Field(default=None, ge=0)
+    earliest_available_date: date | None = None
+    load_factor: float = Field(default=1.0, ge=0.0)
+    response_speed_score: float = Field(default=1.0, ge=0.0, le=1.0)
+    completeness_score: float = Field(default=1.0, ge=0.0, le=1.0)
+    risk_flags: list[str] = []
+
+
 class Warning(BaseModel):
     """Structured, machine-readable warning (never free-form only)."""
 
@@ -68,6 +83,8 @@ class LeadTimeEstimateRequest(BaseModel):
     order: OrderInput
     suppliers: list[SupplierInput] = []
     constraints: Constraints = Constraints()
+    # Optional real-time signals keyed by supplier_id; omitted -> historical only.
+    supplier_state_overrides: dict[str, SupplierStateOverrideInput] | None = None
 
 
 class SupplierTrace(BaseModel):
@@ -105,6 +122,8 @@ class LeadTimeEstimateResponse(BaseModel):
     risk_adjusted_date: date | None = None
     on_time_probability: float | None = None
     feasibility: str | None = None  # engine FeasibilityStatus value
+    # Real-time supplier-state markers for the selected supplier, keyed by supplier_id.
+    supplier_risk_flags: dict[str, list[str]] = {}
     warnings: list[Warning] = []
     calculation_trace: list[SupplierTrace] = []
 
@@ -116,6 +135,8 @@ class PathEnumerateRequest(BaseModel):
     order: OrderInput
     suppliers: list[SupplierInput] = []
     constraints: Constraints = Constraints()
+    # Optional real-time signals keyed by supplier_id; omitted -> historical only.
+    supplier_state_overrides: dict[str, SupplierStateOverrideInput] | None = None
 
 
 class DeliveryPath(BaseModel):
@@ -128,6 +149,9 @@ class DeliveryPath(BaseModel):
     feasible: bool
     confidence: float
     score: float
+    # Real-time supplier-state markers keyed by supplier_id (e.g. SLOW_RESPONSE,
+    # HIGH_LOAD, NO_RESPONSE). Empty when no signal was supplied.
+    supplier_risk_flags: dict[str, list[str]] = {}
     warnings: list[Warning] = []
 
 

@@ -28,6 +28,52 @@ from .reforecast.reforecast_engine import ReforecastEngine
 
 logger = logging.getLogger(__name__)
 
+# Response-behaviour penalty weights (mirror SupplierStateOverride semantics):
+# speed and completeness each contribute up to 0.15, so the max penalty is 0.30.
+_RESPONSE_PENALTY_WEIGHT = 0.15
+
+
+def _earliest_start_floor(order_input: ApparelOrderInput, start: date) -> date:
+    """Raise the resolve start to the latest supplier earliest_available_date.
+
+    Each per-factory graph carries its own factory + supports, so this floors
+    that option's whole timeline to the date its supplier can engage the order."""
+    floors = [
+        p.state_override.earliest_available_date
+        for p in order_input.participants
+        if p.state_override is not None and p.state_override.earliest_available_date is not None
+    ]
+    return max([start, *floors]) if floors else start
+
+
+def _response_penalty(override) -> float:
+    """Score reduction from passive behaviour signals; 0.0 (best) .. 0.30 (worst)."""
+    speed = (1.0 - override.response_speed_score) * _RESPONSE_PENALTY_WEIGHT
+    completeness = (1.0 - override.completeness_score) * _RESPONSE_PENALTY_WEIGHT
+    return round(speed + completeness, 6)
+
+
+def _apply_state_signals(
+    options: list[DeliveryPathOption], order_input: ApparelOrderInput
+) -> None:
+    """Populate response_penalty + supplier_risk_flags on each option in-place.
+
+    Risk flags are aggregated across the whole participant combination; the
+    response penalty comes from the primary (first/factory) participant, since
+    that supplier's behaviour drives the buyer-facing decision for the option."""
+    by_id = {p.participant_id: p for p in order_input.participants}
+    for opt in options:
+        flags: dict[str, list[str]] = {}
+        for pid in opt.participant_combination:
+            participant = by_id.get(pid)
+            if participant is not None and participant.state_override is not None and participant.state_override.risk_flags:
+                flags[pid] = list(participant.state_override.risk_flags)
+        opt.supplier_risk_flags = flags
+
+        primary = by_id.get(opt.participant_combination[0]) if opt.participant_combination else None
+        if primary is not None and primary.state_override is not None:
+            opt.response_penalty = _response_penalty(primary.state_override)
+
 
 class LeadTimeGraphEngine:
     """Orchestrates the full GLTG evaluation pipeline."""
@@ -87,6 +133,10 @@ class LeadTimeGraphEngine:
 
         graph = self._builder.build(order_input, nodes)
         start = order_input.evaluation_date or date.today()
+        # A supplier's real-time earliest_available_date floors when this order's
+        # work can begin: nothing in this (per-factory) graph may start before it.
+        # Propagates through every downstream node via the forward-pass resolver.
+        start = _earliest_start_floor(order_input, start)
         self._resolver.resolve(graph, start, order_input.calendar)
         critical = self._cp_finder.find(graph)
         bottlenecks = self._cp_finder.find_bottlenecks(graph, critical)
@@ -154,6 +204,10 @@ class LeadTimeGraphEngine:
         # Step 2-4: Build/resolve a fresh graph per factory and enumerate options
         # (DEFECT-02/03: each factory option carries its own capacity-bound dates).
         base_options, primary_graph = self._enumerate_options(order_input)
+
+        # Attach real-time supplier-state signals (response penalty + risk flags)
+        # to each option before ranking/packet assembly.
+        _apply_state_signals(base_options, order_input)
         critical_path: list[str] = primary_graph.metadata.get("critical_path", []) if primary_graph else []
         bottlenecks: list[str] = primary_graph.metadata.get("bottleneck_nodes", []) if primary_graph else []
         # Factory option count drives the 0/1/2/3 feasibility rule:
