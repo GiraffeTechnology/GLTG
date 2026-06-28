@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from ..models.duration import DurationEstimate
 from ..models.enums import ApparelNodeType, EvidenceSourceType
@@ -18,6 +18,21 @@ from .confidence import ConfidenceCalculator
 
 def _ev_id() -> str:
     return f"ev_{uuid.uuid4().hex[:8]}"
+
+
+def _production_capacity(
+    node_type: ApparelNodeType, participant: ParticipantProfile | None
+) -> int | None:
+    """Daily capacity that bounds the SEWING (production) node, if known.
+
+    Prefers the SEWING capability's own throughput, else the participant's
+    aggregate capacity. Only SEWING is capacity-bound (DEFECT-03)."""
+    if node_type != ApparelNodeType.SEWING or participant is None:
+        return None
+    cap = participant.get_capability(node_type)
+    if cap is not None and cap.capacity_per_day:
+        return cap.capacity_per_day
+    return participant.capacity_per_day
 
 
 class DurationEstimator:
@@ -45,7 +60,7 @@ class DurationEstimator:
         calendar: CalendarConfig | None = None,
     ) -> DurationEstimate:
         """Return a blended DurationEstimate for this node."""
-        baseline = get_baseline(node_type, quantity)
+        baseline = get_baseline(node_type, quantity, _production_capacity(node_type, participant))
         evidence_items: list[EvidenceItem] = []
         components: list[tuple[float, EvidenceSourceType, float]] = []  # (days, source, conf)
 
@@ -57,7 +72,7 @@ class DurationEstimator:
             description=f"Category baseline p50 for {node_type.value}",
             value=baseline,
             confidence=0.4,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         ))
 
         # --- 2. Supplier capability baseline ---
@@ -72,7 +87,7 @@ class DurationEstimator:
                     description=f"{participant.name} typical lead days from capability profile",
                     value=cap.typical_lead_days,
                     confidence=0.5,
-                    created_at=datetime.utcnow(),
+                    created_at=datetime.now(timezone.utc),
                 ))
 
         # --- 3. Supplier response (confirmed quote) ---
@@ -85,7 +100,7 @@ class DurationEstimator:
                 description=f"Supplier confirmed {supplier_response.confirmed_days} days",
                 value=supplier_response.confirmed_days,
                 confidence=0.75,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
             ))
 
         # --- 4. Historical memory ---
@@ -104,7 +119,7 @@ class DurationEstimator:
                     description=f"Memory-adjusted from {mem['record_count']} past records",
                     value={"days": mem_days, "on_time_rate": mem.get("on_time_rate")},
                     confidence=mem_conf,
-                    created_at=datetime.utcnow(),
+                    created_at=datetime.now(timezone.utc),
                 ))
 
         # --- 5. Progress events (actual progress adjustments) ---
@@ -121,7 +136,7 @@ class DurationEstimator:
                     description=f"Actual remaining days from progress event {latest.event_id}",
                     value=remaining,
                     confidence=0.95,
-                    created_at=datetime.utcnow(),
+                    created_at=datetime.now(timezone.utc),
                 ))
 
         # --- Blend ---

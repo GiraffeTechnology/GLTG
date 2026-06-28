@@ -49,14 +49,6 @@ class CalendarCalculator:
         work_day_weekdays = set(range(working_days_in_week))
         return d.weekday() in work_day_weekdays and d not in holiday_set
 
-    def next_working_day(self, d: date, config: CalendarConfig | None) -> date:
-        """Return `d` if it is a working day, otherwise the next working day."""
-        if self.is_working_day(d, config):
-            return d
-        return self.add_working_days(d, 0, config)  # 0 extra -> same day hunt
-        # Actually we need to move forward if not a working day
-        # Re-implement properly:
-
     def ensure_working_day(self, d: date, config: CalendarConfig | None) -> date:
         """Advance d to the next working day if d is not a working day."""
         if config is None or not config.use_working_days:

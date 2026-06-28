@@ -148,6 +148,22 @@ class PathEnumerator:
             ))
         return options
 
+    def build_option(
+        self, graph: LeadTimeGraph, participant_combination: list[str]
+    ) -> DeliveryPathOption | None:
+        """Build a single option from an already-resolved graph (DEFECT-02).
+
+        Used when the engine re-resolves a fresh graph per factory combination so
+        each option carries that combination's own capacity-bound dates."""
+        if not graph.nodes:
+            return None
+        critical = self._cp_finder.find(graph)
+        bottlenecks = self._cp_finder.find_bottlenecks(graph, critical)
+        terminal = self._find_terminal_node(graph)
+        if terminal is None:
+            return None
+        return self._create_option(graph, critical, bottlenecks, terminal, participant_combination)
+
     def _create_option(
         self,
         graph: LeadTimeGraph,

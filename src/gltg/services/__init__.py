@@ -1,7 +1,5 @@
-"""Deterministic, API-facing GLTG service layer."""
+"""GLTG service layer: the engine adapter that backs the HTTP API."""
 
-from .lead_time_service import estimate
-from .path_enumeration_service import enumerate_paths
-from .reforecast_service import reforecast
+from . import engine_adapter
 
-__all__ = ["estimate", "enumerate_paths", "reforecast"]
+__all__ = ["engine_adapter"]

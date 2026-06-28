@@ -40,8 +40,12 @@ def _cmd_reforecast(args: argparse.Namespace) -> None:
 
     events = load_events_from_json(args.events)
 
+    # CLI boundary decides "today" for the deterministic re-resolve anchor;
+    # the engine itself never reads the wall clock (DEFECT-04).
+    from datetime import date as _date
+
     engine = LeadTimeGraphEngine()
-    updated = engine.reforecast(packet, events)
+    updated = engine.reforecast(packet, events, evaluation_date=_date.today())
 
     if args.output:
         save_packet_to_json(updated, args.output)

@@ -25,7 +25,9 @@ def test_estimate_returns_ordered_percentile_bands():
         ],
     }
     body = client.post("/v1/lead-time/estimate", json=payload).json()
-    assert body["p50_days"] == 28
+    # updated: bands are now engine-derived (p50/p80/p90 = earliest/most_likely/
+    # commitable lead days), not the old sum=28. Ordering invariants still hold.
+    assert body["p50_days"] == 62
     assert body["p80_days"] >= body["p50_days"]
     assert body["p90_days"] >= body["p80_days"]
     assert body["minimum_feasible_days"] <= body["p50_days"]
@@ -84,7 +86,8 @@ def test_deadline_days_drives_feasibility_without_target_date():
         "supplier_id": "M1", "capacity_per_day": 800, "material_ready_days": 5,
         "production_days": 14, "qc_days": 2, "logistics_days": 7, "confidence": 0.8,
     }
-    # total = 28 days. deadline_days=20 -> infeasible; deadline_days=60 -> feasible.
+    # updated: engine commitable for this order is ~147 days. deadline_days=20
+    # -> infeasible; deadline_days=200 -> feasible (was 60 under the old 28-day sum).
     tight = client.post("/v1/lead-time/estimate", json={
         "order": {"quantity": 10000, "deadline_days": 20}, "suppliers": [supplier]}).json()
     assert tight["feasible"] is False
@@ -92,7 +95,7 @@ def test_deadline_days_drives_feasibility_without_target_date():
     assert tight["risk_level"] == "high"
 
     ok = client.post("/v1/lead-time/estimate", json={
-        "order": {"quantity": 10000, "deadline_days": 60}, "suppliers": [supplier]}).json()
+        "order": {"quantity": 10000, "deadline_days": 200}, "suppliers": [supplier]}).json()
     assert ok["feasible"] is True
     assert ok["risk_level"] in {"low", "medium"}
 

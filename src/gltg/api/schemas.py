@@ -98,6 +98,13 @@ class LeadTimeEstimateResponse(BaseModel):
     p90_days: float | None = None
     minimum_feasible_days: float | None = None
     risk_level: str = "unknown"  # low | medium | high | unknown
+    # Additive engine-derived fields (DEFECT-01): the graph engine is the source
+    # of truth for these dates. Optional so existing consumers are unaffected.
+    most_likely_date: date | None = None
+    committable_date: date | None = None
+    risk_adjusted_date: date | None = None
+    on_time_probability: float | None = None
+    feasibility: str | None = None  # engine FeasibilityStatus value
     warnings: list[Warning] = []
     calculation_trace: list[SupplierTrace] = []
 

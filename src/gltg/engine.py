@@ -100,6 +100,37 @@ class LeadTimeGraphEngine:
         """Generate all delivery path options from a resolved graph."""
         return self._enumerator.enumerate(graph)
 
+    def _enumerate_options(
+        self, order_input: ApparelOrderInput
+    ) -> tuple[list[DeliveryPathOption], LeadTimeGraph | None]:
+        """Build options, re-resolving a fresh graph per factory combination.
+
+        With 2+ factories, each factory is assigned to the factory-owned nodes in
+        its own graph so options reflect that factory's real (capacity-bound)
+        schedule rather than the first factory's (DEFECT-02 + DEFECT-03). With
+        0/1 factories the single-graph path is used. Returns the options plus the
+        primary graph (first factory's) for critical-path/bottleneck metadata."""
+        from .enumeration.path_enumerator import _is_factory_participant
+
+        factories = [p for p in order_input.participants if _is_factory_participant(p)]
+        if len(factories) <= 1:
+            graph = self.build_graph(order_input)
+            return self._enumerator.enumerate(graph, order_input), graph
+
+        supports = [p for p in order_input.participants if not _is_factory_participant(p)]
+        support_ids = [p.participant_id for p in supports]
+        options: list[DeliveryPathOption] = []
+        primary_graph: LeadTimeGraph | None = None
+        for factory in factories[:3]:
+            sub_order = order_input.model_copy(update={"participants": [factory] + supports})
+            graph = self.build_graph(sub_order)
+            if primary_graph is None:
+                primary_graph = graph
+            option = self._enumerator.build_option(graph, [factory.participant_id] + support_ids)
+            if option is not None:
+                options.append(option)
+        return options, primary_graph
+
     def evaluate(self, order_input: ApparelOrderInput) -> DeliveryFeasibilityPacket:
         """Full evaluation pipeline.
 
@@ -120,13 +151,11 @@ class LeadTimeGraphEngine:
         # Step 1: Validate
         missing_fields, validation_flags = self._validator.validate(order_input)
 
-        # Step 2-3: Build, resolve, critical path
-        graph = self.build_graph(order_input)
-        critical_path: list[str] = graph.metadata.get("critical_path", [])
-        bottlenecks: list[str] = graph.metadata.get("bottleneck_nodes", [])
-
-        # Step 4: Enumerate base options (one per factory participant)
-        base_options = self._enumerator.enumerate(graph, order_input)
+        # Step 2-4: Build/resolve a fresh graph per factory and enumerate options
+        # (DEFECT-02/03: each factory option carries its own capacity-bound dates).
+        base_options, primary_graph = self._enumerate_options(order_input)
+        critical_path: list[str] = primary_graph.metadata.get("critical_path", []) if primary_graph else []
+        bottlenecks: list[str] = primary_graph.metadata.get("bottleneck_nodes", []) if primary_graph else []
         # Factory option count drives the 0/1/2/3 feasibility rule:
         # never show more options than real factory paths (max 3).
         factory_option_cap = min(3, len(base_options))
@@ -204,6 +233,11 @@ class LeadTimeGraphEngine:
         self,
         existing_packet: DeliveryFeasibilityPacket,
         events: list[ProgressEvent],
+        evaluation_date: date,
     ) -> DeliveryFeasibilityPacket:
-        """Re-evaluate an existing packet given new progress events."""
-        return self._reforecast_engine.reforecast(existing_packet, events)
+        """Re-evaluate an existing packet given new progress events.
+
+        ``evaluation_date`` is required and anchors the deterministic re-resolve;
+        the engine never reads the wall clock (DEFECT-04).
+        """
+        return self._reforecast_engine.reforecast(existing_packet, events, evaluation_date)

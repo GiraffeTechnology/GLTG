@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from ..version import __version__
-from .. import services
+from ..services import engine_adapter
 from .schemas import (
     HealthResponse,
     LeadTimeEstimateRequest,
@@ -36,7 +36,7 @@ def version() -> VersionResponse:
     tags=["lead-time"],
 )
 def estimate_lead_time(req: LeadTimeEstimateRequest) -> LeadTimeEstimateResponse:
-    return services.estimate(req.order, req.suppliers, req.constraints)
+    return engine_adapter.estimate(req.order, req.suppliers, req.constraints)
 
 
 @router.post(
@@ -45,7 +45,7 @@ def estimate_lead_time(req: LeadTimeEstimateRequest) -> LeadTimeEstimateResponse
     tags=["paths"],
 )
 def enumerate_paths(req: PathEnumerateRequest) -> PathEnumerateResponse:
-    return services.enumerate_paths(req.order, req.suppliers, req.constraints)
+    return engine_adapter.enumerate_paths(req.order, req.suppliers, req.constraints)
 
 
 @router.post(
@@ -54,4 +54,4 @@ def enumerate_paths(req: PathEnumerateRequest) -> PathEnumerateResponse:
     tags=["reforecast"],
 )
 def reforecast(req: ReforecastRequest) -> ReforecastResponse:
-    return services.reforecast(req.order, req.suppliers, req.events, req.constraints)
+    return engine_adapter.reforecast(req.order, req.suppliers, req.events, req.constraints)

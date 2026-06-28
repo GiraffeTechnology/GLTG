@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from ..models.enums import FeasibilityStatus, OptionStatus, RiskFlagCode
 from ..models.packet import DeliveryFeasibilityPacket
@@ -116,7 +116,7 @@ class FeasibilityPacketBuilder:
         return DeliveryFeasibilityPacket(
             order_id=order_id,
             status=status,
-            generated_at=datetime.utcnow(),
+            generated_at=datetime.now(timezone.utc),
             earliest_feasible_date=earliest,
             most_likely_date=most_likely,
             commitable_date=commitable,

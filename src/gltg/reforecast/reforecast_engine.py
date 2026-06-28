@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 from ..models.packet import DeliveryFeasibilityPacket
 from ..models.reforecast import ProgressEvent, ReforecastResult
@@ -21,6 +21,7 @@ class ReforecastEngine:
         self,
         packet: DeliveryFeasibilityPacket,
         events: list[ProgressEvent],
+        evaluation_date: date,
     ) -> DeliveryFeasibilityPacket:
         """Apply events to the packet's options and return an updated packet.
 
@@ -74,10 +75,9 @@ class ReforecastEngine:
             resolver = DependencyResolver()
             cp_finder = CriticalPathFinder()
 
-            # Use a start date that respects already-completed work.
-            # The node_finish_floors anchors the re-resolve to event dates.
-            start = date.today()
-            resolver.resolve(temp_graph, start, None, node_finish_floors=node_finish_floors)
+            # Deterministic anchor (DEFECT-04): the caller supplies an explicit
+            # evaluation_date; the engine never reads the wall clock.
+            resolver.resolve(temp_graph, evaluation_date, None, node_finish_floors=node_finish_floors)
 
             new_critical = cp_finder.find(temp_graph)
             new_bottlenecks = cp_finder.find_bottlenecks(temp_graph, new_critical)
@@ -128,7 +128,7 @@ class ReforecastEngine:
         packet.bottleneck_nodes = best.bottleneck_nodes
         packet.risk_flags = packet.risk_flags + new_flags
         packet.acceleration_options = acceleration
-        packet.generated_at = datetime.utcnow()
+        packet.generated_at = datetime.now(timezone.utc)
 
         return packet
 
@@ -148,7 +148,7 @@ class ReforecastEngine:
 
         return ReforecastResult(
             order_id=order_id,
-            reforecast_at=datetime.utcnow(),
+            reforecast_at=datetime.now(timezone.utc),
             previous_commitable_date=previous_commitable,
             new_commitable_date=new_commitable,
             delta_days=delta,

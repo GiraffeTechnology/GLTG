@@ -6,6 +6,7 @@ Run from the GLTG/ directory:
 
 import sys
 import pathlib
+from datetime import date
 
 ROOT = pathlib.Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
@@ -52,9 +53,9 @@ def main() -> None:
     for evt in events:
         print(f"    [{evt.event_id}] {evt.event_type.value} on {evt.event_date}  payload={evt.payload}")
 
-    # Step 4: Reforecast
-    print("\nStep 4: Running engine.reforecast(packet, events) ...")
-    updated_packet = engine.reforecast(initial_packet, events)
+    # Step 4: Reforecast (explicit, deterministic anchor)
+    print("\nStep 4: Running engine.reforecast(packet, events, evaluation_date) ...")
+    updated_packet = engine.reforecast(initial_packet, events, evaluation_date=date(2026, 6, 27))
 
     new_commitable = updated_packet.commitable_date
 
