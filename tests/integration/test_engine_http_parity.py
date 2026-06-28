@@ -73,6 +73,31 @@ def test_http_estimate_is_not_the_legacy_stage_sum():
     assert body["estimated_lead_time_days"] > stage_sum
 
 
+def test_engine_built_before_http_matches_http_output():
+    """Strict parity: build the engine input and evaluate it directly BEFORE the
+    HTTP call, then assert the HTTP response reproduces every engine date field
+    and the feasibility status. Single supplier removes selection ambiguity."""
+    anchor = date.fromisoformat(ANCHOR)
+    order = OrderInput(product_type="apparel", quantity=10000,
+                       target_delivery_date=date(2027, 12, 31), evaluation_date=anchor)
+    supplier = SupplierInput(supplier_id="M1", capacity_per_day=800, material_ready_days=5,
+                             production_days=14, qc_days=2, logistics_days=7, confidence=0.8)
+
+    # Engine evaluated directly, before any HTTP interaction.
+    packet = ENGINE.evaluate(_build_order_for_supplier(order, supplier, anchor))
+
+    # Equivalent HTTP request.
+    payload = {"order": order.model_dump(mode="json"), "suppliers": [supplier.model_dump(mode="json")]}
+    body = client.post("/v1/lead-time/estimate", json=payload).json()
+
+    assert body["estimated_lead_time_days"] == (packet.commitable_date - anchor).days
+    assert body["committable_date"] == packet.commitable_date.isoformat()
+    assert body["most_likely_date"] == packet.most_likely_date.isoformat()
+    assert body["risk_adjusted_date"] == packet.risk_adjusted_latest_date.isoformat()
+    assert body["earliest_delivery_date"] == packet.earliest_feasible_date.isoformat()
+    assert body["feasibility"] == packet.status.value
+
+
 def test_http_capacity_drives_supplier_selection():
     """DEFECT-03 over HTTP: with stage durations equal, the higher-capacity
     supplier wins because its SEWING node is shorter."""

@@ -5,20 +5,9 @@ from __future__ import annotations
 from datetime import datetime, date, timezone
 
 from ..models.packet import DeliveryFeasibilityPacket
-from ..models.path import DeliveryPathOption
 from ..models.reforecast import ProgressEvent, ReforecastResult
 from .event_applier import EventApplier
 from .expedite_options import ExpediteOptionGenerator
-
-
-def _option_start(option: DeliveryPathOption) -> date:
-    """The option's original project start, derived deterministically from its
-    already-resolved node dates (DEFECT-04: no wall-clock fallback)."""
-    starts = [n.earliest_start for n in option.nodes if n.earliest_start is not None]
-    if starts:
-        return min(starts)
-    finishes = [n.commitable_finish for n in option.nodes if n.commitable_finish is not None]
-    return min(finishes) if finishes else date.min
 
 
 class ReforecastEngine:
@@ -32,7 +21,7 @@ class ReforecastEngine:
         self,
         packet: DeliveryFeasibilityPacket,
         events: list[ProgressEvent],
-        evaluation_date: date | None = None,
+        evaluation_date: date,
     ) -> DeliveryFeasibilityPacket:
         """Apply events to the packet's options and return an updated packet.
 
@@ -86,11 +75,9 @@ class ReforecastEngine:
             resolver = DependencyResolver()
             cp_finder = CriticalPathFinder()
 
-            # Deterministic anchor (DEFECT-04): never wall-clock. Honor an
-            # explicit evaluation_date; otherwise reuse the option's original
-            # project start so re-resolve is reproducible across runs/days.
-            start = evaluation_date or _option_start(option)
-            resolver.resolve(temp_graph, start, None, node_finish_floors=node_finish_floors)
+            # Deterministic anchor (DEFECT-04): the caller supplies an explicit
+            # evaluation_date; the engine never reads the wall clock.
+            resolver.resolve(temp_graph, evaluation_date, None, node_finish_floors=node_finish_floors)
 
             new_critical = cp_finder.find(temp_graph)
             new_bottlenecks = cp_finder.find_bottlenecks(temp_graph, new_critical)

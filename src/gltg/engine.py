@@ -233,11 +233,11 @@ class LeadTimeGraphEngine:
         self,
         existing_packet: DeliveryFeasibilityPacket,
         events: list[ProgressEvent],
-        evaluation_date: date | None = None,
+        evaluation_date: date,
     ) -> DeliveryFeasibilityPacket:
         """Re-evaluate an existing packet given new progress events.
 
-        ``evaluation_date`` anchors the deterministic re-resolve; when omitted the
-        reforecast reuses each option's original project start (never wall-clock).
+        ``evaluation_date`` is required and anchors the deterministic re-resolve;
+        the engine never reads the wall clock (DEFECT-04).
         """
         return self._reforecast_engine.reforecast(existing_packet, events, evaluation_date)

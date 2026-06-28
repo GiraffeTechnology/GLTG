@@ -72,3 +72,16 @@ def test_option_order_does_not_change_factory_dates():
     assert committable(a, "F") == committable(b, "F")
     assert committable(a, "S") == committable(b, "S")
     assert committable(a, "F") < committable(a, "S")
+
+
+def test_fast_factory_ranks_first_even_when_input_order_is_slow_then_fast():
+    """Earliest committable date is the primary ranking key: FastFactory must be
+    options[0] even when SlowFactory is supplied first."""
+    order = _order([_factory("SlowFactory", 200), _factory("FastFactory", 5_000)])
+    packet = LeadTimeGraphEngine().evaluate(order)
+
+    assert packet.options[0].participant_combination[0] == "FastFactory"
+    fast = next(o for o in packet.options if o.participant_combination[0] == "FastFactory")
+    slow = next(o for o in packet.options if o.participant_combination[0] == "SlowFactory")
+    assert fast.commitable_date < slow.commitable_date
+    assert (slow.commitable_date - fast.commitable_date).days >= 30

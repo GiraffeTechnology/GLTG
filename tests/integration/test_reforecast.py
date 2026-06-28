@@ -12,6 +12,9 @@ from gltg.models.reforecast import ProgressEvent
 
 from tests.conftest import make_participant, make_order
 
+# Explicit, fixed anchor for the now-required reforecast evaluation_date.
+REFC_ANCHOR = date(2026, 6, 27)
+
 
 @pytest.fixture
 def engine():
@@ -47,33 +50,33 @@ class TestReforecast:
     def test_reforecast_returns_packet(self, engine, base_packet):
         """reforecast() should return a DeliveryFeasibilityPacket."""
         events = [_material_delay_event(node_id=None)]
-        result = engine.reforecast(base_packet, events)
+        result = engine.reforecast(base_packet, events, evaluation_date=REFC_ANCHOR)
         assert isinstance(result, DeliveryFeasibilityPacket)
 
     def test_reforecast_has_correct_order_id(self, engine, base_packet):
         """Reforecast result must have the same order_id as the original packet."""
         events = [_material_delay_event(node_id=None)]
-        result = engine.reforecast(base_packet, events)
+        result = engine.reforecast(base_packet, events, evaluation_date=REFC_ANCHOR)
         assert result.order_id == base_packet.order_id
 
     def test_reforecast_after_material_delay(self, engine, base_packet):
         """After applying a material delay event, commitable_date should be set."""
         original_commitable = base_packet.commitable_date
         events = [_material_delay_event(node_id=None, delay_days=14)]
-        result = engine.reforecast(base_packet, events)
+        result = engine.reforecast(base_packet, events, evaluation_date=REFC_ANCHOR)
         # Result should still have a commitable_date
         assert result.commitable_date is not None
 
     def test_reforecast_delta_days_computed(self, engine, base_packet):
         """Reforecast with a delay event should not crash and should return a valid packet."""
         events = [_material_delay_event(node_id=None, delay_days=7)]
-        result = engine.reforecast(base_packet, events)
+        result = engine.reforecast(base_packet, events, evaluation_date=REFC_ANCHOR)
         # The commitable_date should still be a date object
         assert result.commitable_date is None or isinstance(result.commitable_date, date)
 
     def test_reforecast_no_events_returns_same_packet(self, engine, base_packet):
         """Reforecast with no events should return the packet unchanged."""
-        result = engine.reforecast(base_packet, events=[])
+        result = engine.reforecast(base_packet, events=[], evaluation_date=REFC_ANCHOR)
         assert result.order_id == base_packet.order_id
         assert result.status == base_packet.status
 
@@ -83,14 +86,14 @@ class TestReforecast:
             pytest.skip("No options/nodes in base_packet to target")
         node_id = base_packet.options[0].nodes[0].node_id
         events = [_material_delay_event(node_id=node_id, delay_days=5)]
-        result = engine.reforecast(base_packet, events)
+        result = engine.reforecast(base_packet, events, evaluation_date=REFC_ANCHOR)
         assert isinstance(result, DeliveryFeasibilityPacket)
 
     def test_reforecast_generated_at_updated(self, engine, base_packet):
         """Reforecast should update the generated_at timestamp."""
         original_ts = base_packet.generated_at
         events = [_material_delay_event(node_id=None)]
-        result = engine.reforecast(base_packet, events)
+        result = engine.reforecast(base_packet, events, evaluation_date=REFC_ANCHOR)
         # generated_at should still be a valid datetime
         assert result.generated_at is not None
 
@@ -110,7 +113,7 @@ class TestReforecast:
         ]
         # Record commitable before reforecast
         original_commitable = base_packet.commitable_date
-        result = engine.reforecast(base_packet, events)
+        result = engine.reforecast(base_packet, events, evaluation_date=REFC_ANCHOR)
         # Acceleration options should be populated when delay is positive
         if result.commitable_date and original_commitable and result.commitable_date > original_commitable:
             assert len(result.acceleration_options) > 0, (
@@ -130,7 +133,7 @@ class TestReforecast:
         if not node_ids:
             pytest.skip("No nodes with commitable_finish to delay")
         events = [_material_delay_event(node_id=node_ids[-1], delay_days=30)]
-        result = engine.reforecast(base_packet, events)
+        result = engine.reforecast(base_packet, events, evaluation_date=REFC_ANCHOR)
         for opt in result.acceleration_options:
             assert "name" in opt
             assert "days_saved" in opt
@@ -173,12 +176,9 @@ class TestReforecastDeterminism:
         # A later anchor pushes the (non-anchored) downstream dates out.
         assert late.commitable_date >= early.commitable_date
 
-    def test_reforecast_without_anchor_is_deterministic(self):
-        """Omitting evaluation_date must still be reproducible (no date.today())."""
+    def test_reforecast_requires_explicit_evaluation_date(self):
+        """evaluation_date is required (Option A): no implicit wall-clock anchor."""
         e1, p1 = _fresh_packet()
         nid = p1.options[0].nodes[0].node_id
-        r1 = e1.reforecast(p1, [_material_delay_event(node_id=nid, delay_days=10)])
-        e2, p2 = _fresh_packet()
-        nid2 = p2.options[0].nodes[0].node_id
-        r2 = e2.reforecast(p2, [_material_delay_event(node_id=nid2, delay_days=10)])
-        assert r1.commitable_date == r2.commitable_date
+        with pytest.raises(TypeError):
+            e1.reforecast(p1, [_material_delay_event(node_id=nid, delay_days=10)])

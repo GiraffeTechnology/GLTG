@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from ..models.enums import OptionLabel, RiskFlagCode
 from ..models.path import DeliveryPathOption
 
@@ -25,12 +27,18 @@ class OptionRanker:
         options: list[DeliveryPathOption],
         requested_date=None,
     ) -> list[DeliveryPathOption]:
-        """Score all options, sort descending, return top 3 with labels."""
+        """Rank options and return the top 3 with labels.
+
+        Primary key is the earliest committable delivery date: when factory
+        alternatives differ in capacity-bound schedule, the one that can commit
+        soonest must rank first. The composite score breaks ties (e.g. equal
+        dates), so among same-date options the better-scored one leads.
+        """
         if not options:
             return []
 
         scored = [(self._score(o, requested_date), o) for o in options]
-        scored.sort(key=lambda x: x[0], reverse=True)
+        scored.sort(key=lambda x: (x[1].commitable_date or date.max, -x[0]))
 
         top = scored[:3]
         result = []
