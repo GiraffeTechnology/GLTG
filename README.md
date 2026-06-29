@@ -1,157 +1,263 @@
-# GLTG -- Giraffe Lead-Time Graph
+# GLTG — Giraffe Lead-Time Graph
 
-**Version 1.0.0**
+`Python 3.11+` | `GLTG v1.0.0` | `Deterministic Engine` | `FastAPI Service` | `CLI` | `AIVAN / giraffe-agent / abcdYi Integration`
 
-GLTG is an evidence-weighted execution-time graph model for apparel and textile orders. It is not a simple lead-time calculator.
+GLTG is the standalone source of truth for apparel and textile lead-time calculation, execution-path enumeration, and delivery reforecasting across the Giraffe Technology stack.
 
-GLTG converts dynamic order forms, participant capabilities, supplier confirmations, production progress, QC events, logistics states, and supplier memory into risk-adjusted delivery plans, commitable dates, critical paths, acceleration signals, and delivery feasibility packets.
+It is not a simple lead-time calculator. GLTG converts order requirements, supplier capabilities, supplier confirmations, progress events, historical memory, logistics assumptions, and constraints into evidence-weighted delivery-feasibility packets.
 
 ---
 
-## What GLTG Is
+## What GLTG Owns
 
-GLTG is the **standalone source of truth** for lead-time calculation, supplier
-lead-time estimation, path enumeration, critical-path / execution-graph
-computation, and reforecasting for apparel and textile orders. It ships as:
+GLTG owns:
 
-1. A deterministic Python engine + service layer (`gltg`).
-2. A stable HTTP API (FastAPI) that all Giraffe products consume.
+```text
+lead-time estimation
+supplier lead-time comparison
+P50 / P80 / P90 delivery bands
+committable delivery dates
+execution-path enumeration
+single-source and parallel-split path options
+critical-path and bottleneck reasoning in the engine layer
+reforecasting after progress events
+supplier-count edge-case handling
+structured warnings and calculation traces
+```
+
+GLTG does not own:
+
+```text
+private supplier database persistence
+RFQ/project workflow state
+human approval workflow
+IM/email account connectivity
+final legal or commercial commitments
+```
+
+Consumers such as AIVAN, `giraffe-agent`, and `abcdYi` must call GLTG through the HTTP contract. They must not vendor or duplicate GLTG lead-time logic.
+
+---
 
 ## Why GLTG Is Standalone
 
-GLTG used to be vendored/duplicated inside `giraffe-agent`, `abcdYi`, and
-`aivan`, which led to divergent, conflicting implementations and silent local
-fallbacks. GLTG is now a single standalone service so that:
+GLTG used to be duplicated inside multiple product repositories, which created conflicting local implementations and silent fallback behavior. The current architecture requires a single lead-time authority:
 
-- there is exactly one implementation of lead-time / path / reforecast logic;
-- consumers integrate through a versioned HTTP contract, not vendored code;
-- no consumer silently falls back to local calculation or LLM guessing.
+```text
+AIVAN / giraffe-agent / abcdYi
+        │
+        │ HTTP contract only
+        ▼
+      GLTG
+        │
+        ├── deterministic graph engine
+        ├── lead-time / path / reforecast API
+        ├── CLI for local evaluation
+        └── structured traces for auditability
+```
 
-`giraffe-agent`, `abcdYi`, and `aivan` now call GLTG **only** through
-`GLTG_API_BASE_URL`. No other repository may vendor or duplicate GLTG engine code.
+No consumer should silently fall back to LLM-generated or local guessed lead-time calculations.
 
-## API Usage
+---
 
-Endpoints (all JSON):
+## Install
+
+```bash
+git clone https://github.com/GiraffeTechnology/GLTG.git
+cd GLTG
+python -m pip install -e ".[dev]"
+```
+
+For API-only runtime:
+
+```bash
+python -m pip install -e ".[api]"
+```
+
+With `uv`:
+
+```bash
+uv sync
+```
+
+---
+
+## Run the API Service
+
+```bash
+uvicorn gltg.api.main:app --host 0.0.0.0 --port 8090
+```
+
+Health check:
+
+```bash
+curl http://localhost:8090/health
+```
+
+Version:
+
+```bash
+curl http://localhost:8090/version
+```
+
+Docker:
+
+```bash
+docker build -t giraffe-gltg .
+docker run -p 8090:8090 giraffe-gltg
+```
+
+The Docker image honors:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `GLTG_HOST` | `0.0.0.0` | Uvicorn bind host. |
+| `GLTG_PORT` | `8090` | Uvicorn bind port. |
+
+---
+
+## HTTP API Contract
+
+Default base URL:
+
+```text
+http://localhost:8090
+```
 
 | Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/health` | Liveness: `{"status":"ok","service":"gltg"}` |
-| GET | `/version` | `{"service":"gltg","version":"1.0.0","api_version":"v1"}` |
-| POST | `/v1/lead-time/estimate` | Estimate lead time + earliest delivery date |
-| POST | `/v1/paths/enumerate` | Deterministically ranked execution paths |
-| POST | `/v1/reforecast` | Updated forecast given new supplier/order facts |
+|---|---|---|
+| `GET` | `/health` | Liveness: `{"status":"ok","service":"gltg"}`. |
+| `GET` | `/version` | Service version and API version. |
+| `POST` | `/v1/lead-time/estimate` | Estimate lead time, delivery dates, feasibility, selected supplier, warnings, and calculation trace. |
+| `POST` | `/v1/paths/enumerate` | Return deterministic delivery path options, including single-source and parallel-split paths. |
+| `POST` | `/v1/reforecast` | Apply progress-event deltas and return updated lead-time forecast. |
 
-Example:
+The `/v1` DTOs are intentionally simpler than the internal graph-engine domain models. The service layer maps transport input into the deterministic engine and returns stable JSON for consumers.
+
+---
+
+## Lead-Time Estimate Example
 
 ```bash
 curl -s http://localhost:8090/v1/lead-time/estimate \
   -H 'content-type: application/json' \
   -d '{
-    "order": {"product_type": "apparel", "quantity": 10000, "target_delivery_date": "2026-08-31"},
-    "suppliers": [{"supplier_id": "M1", "name": "Supplier M1", "capacity_per_day": 800,
-                   "material_ready_days": 5, "production_days": 14, "qc_days": 2,
-                   "logistics_days": 7, "confidence": 0.8}],
-    "constraints": {"allow_partial_suppliers": true, "min_supplier_count": 0, "currency": "USD"}
+    "order": {
+      "product_type": "apparel",
+      "quantity": 10000,
+      "target_delivery_date": "2026-08-31",
+      "evaluation_date": "2026-06-30",
+      "destination": "Vancouver",
+      "logistics_mode": "air",
+      "deadline_days": 45
+    },
+    "suppliers": [
+      {
+        "supplier_id": "M1",
+        "name": "Supplier M1",
+        "capacity_per_day": 800,
+        "material_ready_days": 5,
+        "production_days": 14,
+        "qc_days": 2,
+        "logistics_days": 7,
+        "confidence": 0.8
+      }
+    ],
+    "constraints": {
+      "allow_partial_suppliers": true,
+      "min_supplier_count": 0,
+      "currency": "USD"
+    }
   }'
 ```
 
-**Supplier-count edge cases (never crash):** 0 suppliers -> `feasible=false` with
-a structured `NO_SUPPLIERS` reason; 1 supplier -> calculate + `LIMITED_COMPARISON`
-warning; 2 suppliers -> calculate + `LIMITED_SUPPLIER_POOL` warning; 3+ -> full
-comparison and path enumeration.
+Response fields include:
 
-## Local Development
-
-```bash
-python -m pip install -e ".[dev]"
-pytest
-python scripts/verify_gltg_5x.py
-python scripts/run_zero_one_two_supplier_cases.py
-python scripts/run_10000_shirts_acceptance.py
-python scripts/run_api_edge_cases.py
-uvicorn gltg.api.main:app --host 0.0.0.0 --port 8090
+```text
+estimated_lead_time_days
+earliest_delivery_date
+most_likely_date
+committable_date
+risk_adjusted_date
+p50_days
+p80_days
+p90_days
+on_time_probability
+feasibility
+risk_level
+warnings
+calculation_trace
 ```
 
-## Docker Usage
-
-```bash
-docker build -t giraffe-gltg .
-docker run -p 8090:8090 giraffe-gltg
-# or
-docker compose up --build
-curl http://localhost:8090/health
-```
-
-Environment variables (see `.env.example`): `GLTG_HOST`, `GLTG_PORT`,
-`GLTG_API_VERSION`, `GLTG_LOG_LEVEL`.
-
-## Integration Instructions (giraffe-agent / abcdYi / aivan)
-
-Each consumer ships a thin HTTP client (`src/integrations/gltg_client.py`) and
-configures:
-
-```bash
-GLTG_API_BASE_URL=http://localhost:8090
-GLTG_API_TIMEOUT_SECONDS=30
-```
-
-The client validates input, sends JSON with explicit timeouts, returns a
-structured `GLTGClientResult(ok, data, error, status_code)`, never falls back to
-local calculation, and stores the GLTG response trace in decision packets /
-execution logs. See `docs/integration_guide.md`.
-
-## Test Commands
-
-```bash
-pytest                                   # unit + integration + e2e + api
-python scripts/verify_gltg_5x.py         # determinism (5x)
-python scripts/run_api_edge_cases.py     # API 0/1/2/3+ supplier edge cases
-```
-
-## Acceptance Criteria
-
-See `docs/acceptance_criteria.md`. In short: GLTG installs and tests standalone,
-runs as an HTTP service exposing the five endpoints above, handles 0/1/2/3+
-suppliers without crashing, and is the only place lead-time / path / reforecast
-logic lives.
+Consumers must store the GLTG response trace in decision packets or execution logs.
 
 ---
 
-## Why GLTG Is Not a Simple Lead-Time Calculator
-
-A simple calculator applies `max(materials, trims) + production + QC + shipping`. GLTG does not.
-
-GLTG:
-
-- Builds a real dependency graph of apparel workflow nodes
-- Resolves node schedules using topological ordering with calendar constraints
-- Weights duration estimates by evidence quality (actual progress > supplier confirmation > historical memory > supplier quote > category baseline > AI estimate)
-- Enumerates feasible delivery path options across different participant combinations
-- Prunes infeasible paths with explanatory traces
-- Detects the critical path and bottleneck nodes
-- Computes on-time probability using p50/p80/p90 estimates
-- Generates batch and split delivery options
-- Reforecasts after progress events
-- Generates expedite options to recover delayed orders
-- Returns 0 to 3 ranked delivery options -- never crashes with fewer than 3 suppliers
-
----
-
-## Installation
-
-Requires Python 3.11+.
+## Path Enumeration Example
 
 ```bash
-cd GLTG
-uv sync
-# or
-pip install -e ".[dev]"
+curl -s http://localhost:8090/v1/paths/enumerate \
+  -H 'content-type: application/json' \
+  -d '{
+    "order": {"product_type": "apparel", "quantity": 10000, "evaluation_date": "2026-06-30"},
+    "suppliers": [
+      {"supplier_id": "M1", "capacity_per_day": 800, "material_ready_days": 5, "production_days": 14, "qc_days": 2, "logistics_days": 7, "confidence": 0.8},
+      {"supplier_id": "M2", "capacity_per_day": 600, "material_ready_days": 4, "production_days": 18, "qc_days": 3, "logistics_days": 8, "confidence": 0.7}
+    ],
+    "constraints": {"allow_partial_suppliers": true}
+  }'
+```
+
+Returned paths are ranked deterministically by feasibility, lead time, confidence, and path ID.
+
+Path modes:
+
+```text
+SINGLE_SOURCE
+PARALLEL_SPLIT
 ```
 
 ---
 
-## Quick Start
+## Reforecast Example
+
+```bash
+curl -s http://localhost:8090/v1/reforecast \
+  -H 'content-type: application/json' \
+  -d '{
+    "order": {"product_type": "apparel", "quantity": 10000, "evaluation_date": "2026-06-30"},
+    "suppliers": [
+      {"supplier_id": "M1", "capacity_per_day": 800, "material_ready_days": 5, "production_days": 14, "qc_days": 2, "logistics_days": 7, "confidence": 0.8}
+    ],
+    "events": [
+      {"supplier_id": "M1", "production_days_delta": 3, "note": "Factory queue delay"}
+    ],
+    "constraints": {"allow_partial_suppliers": true}
+  }'
+```
+
+Progress events are additive deltas. Positive values delay the plan; negative values pull in the plan.
+
+---
+
+## Supplier-Count Edge Cases
+
+GLTG must never crash or invent suppliers to fill three slots.
+
+HTTP API behavior:
+
+| Supplier count | Result |
+|---:|---|
+| `0` | `feasible=false`, empty path list, structured `NO_SUPPLIERS` warning. |
+| `1` | Calculation proceeds with `LIMITED_COMPARISON` / single-source warning. |
+| `2` | Calculation proceeds with `LIMITED_SUPPLIER_POOL` warning. |
+| `3+` | Full comparison and path enumeration. |
+
+Internal engine packet examples also surface limited-competition risk flags for fewer-than-three supplier cases.
+
+---
+
+## Python Engine Usage
 
 ```python
 from gltg import LeadTimeGraphEngine, ApparelOrderInput
@@ -175,158 +281,148 @@ print(packet.critical_path)
 print(packet.risk_flags)
 ```
 
----
-
-## Python API
+Core engine operations:
 
 ```python
-from gltg import (
-    LeadTimeGraphEngine,
-    ApparelOrderInput,
-    ParticipantProfile,
-    SupplierMemoryRecord,
-    ProgressEvent,
-    DeliveryFeasibilityPacket,
-    DecisionPacket,
-    LeadTimeGraph,
-    LeadTimeNode,
-    LeadTimeEdge,
-    RiskFlag,
-)
-
-engine = LeadTimeGraphEngine()
-
-# Build a graph
-graph = engine.build_graph(order_input)
-
-# Enumerate options
+graph = engine.build_graph(order)
 options = engine.enumerate_options(graph)
-
-# Full evaluation
-packet = engine.evaluate(order_input)
-
-# Reforecast after events
-updated_packet = engine.reforecast(packet, events)
+packet = engine.evaluate(order)
+updated_packet = engine.reforecast(packet, events, evaluation_date=...)
 ```
-
-### `DeliveryFeasibilityPacket` fields
-
-| Field | Type | Description |
-|---|---|---|
-| `status` | `FeasibilityStatus` | FEASIBLE / LIMITED_OPTIONS / NO_FEASIBLE_OPTION / REQUIRES_EXPEDITE |
-| `options` | `list[DeliveryPathOption]` | 0 to 3 ranked options |
-| `commitable_date` | `date \| None` | P90 commitable delivery date |
-| `most_likely_date` | `date \| None` | P80 most likely delivery date |
-| `earliest_feasible_date` | `date \| None` | P50 earliest feasible date |
-| `on_time_probability` | `float \| None` | Probability of on-time delivery |
-| `critical_path` | `list[str]` | Ordered list of critical node IDs |
-| `bottleneck_nodes` | `list[str]` | Nodes causing most delay |
-| `risk_flags` | `list[RiskFlag]` | Risk signals detected |
-| `missing_fields` | `list[str]` | Fields missing from order input |
-| `evidence_summary` | `list[EvidenceItem]` | Evidence used in computation |
-| `recommended_action` | `str \| None` | Suggested next action |
-| `human_review_required` | `bool` | Always True in v1.0 |
 
 ---
 
 ## CLI Usage
 
+Evaluate an order:
+
 ```bash
-# Evaluate an order
-gltg evaluate examples/10000_shirts_order.json
-
-# Evaluate with human-readable summary
 gltg evaluate examples/10000_shirts_order.json --summary
+```
 
-# Write output to file
-gltg evaluate examples/10000_shirts_order.json --output result.json
+Write a feasibility packet:
 
-# Reforecast after progress events
-gltg reforecast examples/10000_shirts_order.json examples/10000_shirts_progress_events.json --summary
+```bash
+gltg evaluate examples/10000_shirts_order.json --output packet.json
+```
 
-# Zero supplier case
+Reforecast an existing packet with progress events:
+
+```bash
+gltg reforecast packet.json examples/10000_shirts_progress_events.json --summary
+```
+
+Important: CLI `reforecast` expects an existing serialized packet as the first argument, not the original order JSON.
+
+Edge-case examples:
+
+```bash
 gltg evaluate examples/zero_suppliers.json --summary
-
-# One supplier case
 gltg evaluate examples/one_supplier.json --summary
-
-# Two supplier case
 gltg evaluate examples/two_suppliers.json --summary
 ```
 
 ---
 
-## Examples
+## Example Files
 
 | File | Description |
 |---|---|
-| `examples/10000_shirts_order.json` | 10,000 men's cotton shirts, FOB Shenzhen, 45-day requirement |
-| `examples/zero_suppliers.json` | Valid order with no participants -- returns NO_FEASIBLE_OPTION |
-| `examples/one_supplier.json` | Single supplier -- returns LIMITED_OPTIONS + LIMITED_COMPETITION |
-| `examples/two_suppliers.json` | Two suppliers -- returns LIMITED_OPTIONS + LIMITED_COMPARISON |
+| `examples/10000_shirts_order.json` | 10,000-piece apparel order with participants, supplier memory, supplier responses, calendar, and dynamic form fields. |
+| `examples/10000_shirts_participants.json` | Standalone participant profiles from the main shirt example. |
+| `examples/10000_shirts_supplier_memory.json` | Supplier memory records used for duration adjustment. |
+| `examples/10000_shirts_progress_events.json` | Progress events for reforecast testing. |
+| `examples/zero_suppliers.json` | No supplier / no participant case. |
+| `examples/one_supplier.json` | Single-supplier case. |
+| `examples/two_suppliers.json` | Two-supplier case. |
 
 ---
 
-## Test Commands
+## Tests and Acceptance Scripts
+
+Run all tests:
 
 ```bash
-cd GLTG
-
-# Run all tests
+pytest
+# or
 uv run pytest
-
-# Run acceptance scripts
-uv run python scripts/run_10000_shirts_acceptance.py
-uv run python scripts/run_zero_one_two_supplier_cases.py
-uv run python scripts/verify_gltg_5x.py
 ```
 
----
+Acceptance scripts:
 
-## Integration with Giraffe Agent
-
-```python
-from gltg.integrations.giraffe_agent_adapter import GiraffeAgentAdapter
-
-adapter = GiraffeAgentAdapter()
-
-# Convert agent dynamic form to GLTG input
-order_input = adapter.dynamic_form_to_order(agent_form_data)
-
-# Evaluate
-from gltg import LeadTimeGraphEngine
-engine = LeadTimeGraphEngine()
-packet = engine.evaluate(order_input)
-
-# Convert back to agent response shape
-agent_response = adapter.packet_to_agent_response(packet)
+```bash
+python scripts/verify_gltg_5x.py
+python scripts/run_zero_one_two_supplier_cases.py
+python scripts/run_10000_shirts_acceptance.py
+python scripts/run_api_edge_cases.py
 ```
 
+Typical pre-release check:
+
+```bash
+pytest
+python scripts/verify_gltg_5x.py
+python scripts/run_api_edge_cases.py
+python scripts/run_zero_one_two_supplier_cases.py
+python scripts/run_10000_shirts_acceptance.py
+```
+
+Acceptance requirements:
+
+1. Standalone install works.
+2. API service exposes `/health`, `/version`, `/v1/lead-time/estimate`, `/v1/paths/enumerate`, and `/v1/reforecast`.
+3. 0/1/2/3+ supplier cases do not crash.
+4. Lead-time, path, and reforecast logic lives in GLTG, not in consumer repositories.
+5. Outputs include structured warnings and calculation traces.
+6. Human review remains required before downstream commercial commitments.
+
 ---
 
-## Fewer-Than-3 Rule
+## Integration Contract for AIVAN / giraffe-agent / abcdYi
 
-| Candidate count | Status | Risk flags |
-|---|---|---|
-| 0 | `NO_FEASIBLE_OPTION` | -- |
-| 1 | `LIMITED_OPTIONS` | `LIMITED_COMPETITION` |
-| 2 | `LIMITED_OPTIONS` | `LIMITED_COMPARISON` |
-| ?3 | `FEASIBLE` | -- |
+Consumers configure:
 
-GLTG never crashes or invents suppliers to fill 3 slots.
+```bash
+GLTG_API_BASE_URL=http://localhost:8090
+GLTG_API_TIMEOUT_SECONDS=30
+```
+
+Consumer clients should:
+
+```text
+validate request shape
+send JSON to GLTG with explicit timeout
+return structured result: ok / data / error / status_code
+persist GLTG response trace in decision packets or execution logs
+avoid local fallback calculation
+avoid LLM-generated lead-time replacement
+surface GLTG errors to the caller clearly
+```
+
+GLTG is the calculation authority. Consumers may explain GLTG outputs, but they must not replace them.
 
 ---
 
-## Supplier Lead Times Are Evidence, Not Truth
+## Why GLTG Is Not a Simple Calculator
 
-Supplier-stated dates are one evidence source among many. GLTG also considers:
+A simple calculator adds stage durations. GLTG uses a graph model and evidence hierarchy.
 
-- Participant capability and capacity
-- Historical supplier memory (past actual vs. stated)
-- Apparel category baseline lead times
-- Actual production progress events
-- Calendar constraints (working days, holidays)
-- Missing evidence (creates risk flags and lowers confidence)
+GLTG can:
+
+```text
+build apparel workflow dependency graphs
+resolve node schedules with calendar constraints
+weight estimates by evidence quality
+enumerate feasible delivery paths
+prune infeasible paths with explanatory traces
+identify bottlenecks and critical paths
+compute p50 / p80 / p90 planning bands
+produce single-source and split-delivery options
+reforecast after progress events
+return structured warnings for missing or weak evidence
+```
+
+Supplier-stated dates are evidence, not truth. GLTG also considers capability, capacity, historical memory, category baselines, actual progress events, calendar constraints, and missing evidence.
 
 ---
 
@@ -334,43 +430,37 @@ Supplier-stated dates are one evidence source among many. GLTG also considers:
 
 | Doc | Description |
 |---|---|
-| `docs/model_spec.md` | Full model specification |
-| `docs/evidence_weighting.md` | Evidence hierarchy and weighting |
-| `docs/apparel_node_templates.md` | All 28 apparel node types |
-| `docs/path_enumeration.md` | Path enumeration algorithm |
-| `docs/reforecasting.md` | Reforecast after progress events |
-| `docs/integration_guide.md` | Integrating with Giraffe Agent |
-| `docs/api_reference.md` | Full API reference |
-| `docs/acceptance_criteria.md` | Acceptance criteria for v1.0 |
-| `docs/glossary.md` | Terminology glossary |
+| `docs/model_spec.md` | Full model specification. |
+| `docs/evidence_weighting.md` | Evidence hierarchy and weighting. |
+| `docs/apparel_node_templates.md` | Apparel node templates. |
+| `docs/path_enumeration.md` | Path enumeration algorithm. |
+| `docs/reforecasting.md` | Reforecast after progress events. |
+| `docs/integration_guide.md` | Consumer integration guide. |
+| `docs/api_reference.md` | HTTP API reference. |
+| `docs/acceptance_criteria.md` | v1.0 acceptance criteria. |
+| `docs/glossary.md` | Terminology glossary. |
 
 ---
 
-## Limitations (v1.0)
+## Limitations in v1.0
 
 1. Calendar support uses simple working-day arithmetic. Complex multi-region holiday calendars are not yet supported.
-2. On-time probability uses a normal distribution approximation over p50/p80/p90 quantiles. A full Monte Carlo simulation is planned for v2.0.
+2. On-time probability uses a normal-distribution approximation over p50/p80/p90 quantiles.
 3. Path enumeration generates options from participant combinations but does not yet support full mixed-factory graph branching.
-4. All outputs carry `human_review_required=True`. Automated commitments require human sign-off.
+4. Outputs require human review before commercial commitment.
 
 ---
 
 ## Next Iteration
 
-1. Monte Carlo simulation for delivery probability distributions
-2. Multi-region calendar support with supplier timezone-aware scheduling
-3. Full mixed-factory graph branching with cost modeling
-4. Live webhook integration for real-time reforecast triggers
-5. Buyer portal output adapter
+1. Monte Carlo delivery probability simulation.
+2. Multi-region calendar support with supplier timezone-aware scheduling.
+3. Full mixed-factory graph branching with cost modeling.
+4. Live webhook integration for real-time reforecast triggers.
+5. Buyer-portal output adapter.
 
 ---
 
 ## License
 
-See `LICENSE` file.
-
----
-
-## Version
-
-GLTG 1.0.0
+See `LICENSE`.
