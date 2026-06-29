@@ -22,13 +22,19 @@ class ReforecastEngine:
         packet: DeliveryFeasibilityPacket,
         events: list[ProgressEvent],
         evaluation_date: date,
+        now: datetime | None = None,
     ) -> DeliveryFeasibilityPacket:
         """Apply events to the packet's options and return an updated packet.
 
         Event-applied dates are used as ANCHORS during re-resolve so that
         node-level mutations (delay shifts, completion dates) are not discarded
         when the dependency graph is re-propagated forward.
+
+        ``now`` is the timestamp stamped onto ``packet.generated_at``. It is
+        injected for determinism (DEFECT-REFORECAST-01); it defaults to the wall
+        clock only at this boundary so the engine itself never reads it.
         """
+        _now = now or datetime.now(timezone.utc)
         if not packet.options or not events:
             return packet
 
@@ -128,7 +134,7 @@ class ReforecastEngine:
         packet.bottleneck_nodes = best.bottleneck_nodes
         packet.risk_flags = packet.risk_flags + new_flags
         packet.acceleration_options = acceleration
-        packet.generated_at = datetime.now(timezone.utc)
+        packet.generated_at = _now
 
         return packet
 
@@ -141,14 +147,19 @@ class ReforecastEngine:
         critical_path_changed: bool,
         new_risk_flags,
         acceleration_options: list[dict],
+        now: datetime | None = None,
     ) -> ReforecastResult:
+        # deprecated: legacy helper, not called by reforecast(); retained for
+        # backward compatibility. ``now`` is injected for determinism and only
+        # falls back to the wall clock at this boundary.
+        _now = now or datetime.now(timezone.utc)
         delta = None
         if previous_commitable and new_commitable:
             delta = (new_commitable - previous_commitable).days
 
         return ReforecastResult(
             order_id=order_id,
-            reforecast_at=datetime.now(timezone.utc),
+            reforecast_at=_now,
             previous_commitable_date=previous_commitable,
             new_commitable_date=new_commitable,
             delta_days=delta,

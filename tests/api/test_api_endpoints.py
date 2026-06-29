@@ -182,3 +182,16 @@ def test_reforecast_unknown_supplier_event():
     body = client.post("/v1/reforecast", json=payload).json()
     assert body["applied_events"][0]["applied"] is False
     assert body["applied_events"][0]["reason"] == "unknown_supplier"
+
+
+def test_validation_error_uses_consistent_envelope():
+    # DEFECT-API-01: request-validation failures must use the same
+    # {"error": ..., "code": ...} envelope as domain errors, not FastAPI's
+    # default {"detail": [...]} shape.
+    resp = client.post("/v1/lead-time/estimate", json={})
+    assert resp.status_code == 422
+    body = resp.json()
+    assert "error" in body
+    assert "code" in body
+    assert body["code"] == "VALIDATION_ERROR"
+    assert "detail" not in body
