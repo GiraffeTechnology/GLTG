@@ -7,6 +7,7 @@ Run locally:
 from __future__ import annotations
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from ..errors import GLTGError
@@ -32,6 +33,19 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=422,
             content={"error": str(exc), "code": type(exc).__name__},
+        )
+
+    # Request-validation failures (DEFECT-API-01): FastAPI's default
+    # ``{"detail": [...]}`` body is reshaped into the same
+    # ``{"error": ..., "code": ...}`` envelope as domain errors so every error
+    # response is structurally consistent. 422 remains the correct HTTP status.
+    @app.exception_handler(RequestValidationError)
+    async def _validation_error_handler(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=422,
+            content={"error": str(exc.errors()), "code": "VALIDATION_ERROR"},
         )
 
     @app.exception_handler(Exception)

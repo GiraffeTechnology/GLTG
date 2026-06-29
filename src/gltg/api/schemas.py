@@ -186,3 +186,24 @@ class VersionResponse(BaseModel):
     service: str = "gltg"
     version: str
     api_version: str = "v1"
+
+
+# --------------------------------------------------------------------------- #
+# Supplier Signal / Questionnaire (next iteration)
+# --------------------------------------------------------------------------- #
+class QuestionnaireEnquiryContext(BaseModel):
+    """Context sent to aivan when triggering a per-enquiry questionnaire."""
+    enquiry_id: str
+    supplier_id: str
+    product_type: str
+    quantity: int
+    destination: str
+    deadline_days: int | None = None
+    lead_time_estimate_p50: int | None = None   # populated from GLTG output
+
+
+class QuestionnaireResponse(BaseModel):
+    """aivan's extracted questionnaire result."""
+    status: str                     # "ok" | "error"
+    output: str                     # human-readable LLM response
+    extracted_fields: dict = {}     # structured fields extracted by LLM

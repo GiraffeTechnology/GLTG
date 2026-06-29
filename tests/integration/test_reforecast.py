@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -96,6 +96,16 @@ class TestReforecast:
         result = engine.reforecast(base_packet, events, evaluation_date=REFC_ANCHOR)
         # generated_at should still be a valid datetime
         assert result.generated_at is not None
+
+    def test_reforecast_injected_now_is_deterministic(self, engine, base_packet):
+        """When ``now`` is injected, generated_at must equal it exactly
+        (DEFECT-REFORECAST-01) -- the engine must not read the wall clock."""
+        fixed_now = datetime(2026, 6, 29, 0, 0, 0, tzinfo=timezone.utc)
+        events = [_material_delay_event(node_id=None)]
+        result = engine.reforecast(
+            base_packet, events, evaluation_date=REFC_ANCHOR, now=fixed_now
+        )
+        assert result.generated_at == fixed_now
 
     def test_reforecast_delay_produces_acceleration_options(self, engine, base_packet):
         """A node-level delay that shifts commitable_date must produce acceleration_options."""

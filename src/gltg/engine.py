@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, datetime
 
 from .models.graph import LeadTimeGraph
 from .models.order import ApparelOrderInput
@@ -234,10 +234,15 @@ class LeadTimeGraphEngine:
         existing_packet: DeliveryFeasibilityPacket,
         events: list[ProgressEvent],
         evaluation_date: date,
+        now: datetime | None = None,
     ) -> DeliveryFeasibilityPacket:
         """Re-evaluate an existing packet given new progress events.
 
         ``evaluation_date`` is required and anchors the deterministic re-resolve;
-        the engine never reads the wall clock (DEFECT-04).
+        the engine never reads the wall clock (DEFECT-04). ``now`` may be injected
+        to make the output ``generated_at`` timestamp deterministic as well
+        (DEFECT-REFORECAST-01).
         """
-        return self._reforecast_engine.reforecast(existing_packet, events, evaluation_date)
+        return self._reforecast_engine.reforecast(
+            existing_packet, events, evaluation_date, now=now
+        )
