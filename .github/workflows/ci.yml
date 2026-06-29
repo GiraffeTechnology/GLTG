@@ -27,6 +27,9 @@ jobs:
       - name: Unit + API tests
         run: pytest -q
 
+      - name: Unified giraffe-db data-ID contract scan
+        run: python scripts/check_unified_data_ids.py --repo .
+
       - name: API edge cases (0/1/2/3+ suppliers)
         run: python scripts/run_api_edge_cases.py
 
