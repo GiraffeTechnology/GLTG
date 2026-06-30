@@ -13,6 +13,33 @@ from pydantic import BaseModel, Field
 
 
 LeadTimeConfidence = Literal["P50", "P80", "P90"]
+MaterialAvailabilityStatus = Literal[
+    "in_stock",
+    "reserved_stock",
+    "partial_stock",
+    "supplier_confirmation_required",
+    "not_available",
+    "substitute_material_required",
+    "unknown",
+]
+SupplierExecutionMode = Literal[
+    "in_house_manufacturer",
+    "factory_without_stock",
+    "trader",
+    "broker",
+    "hybrid",
+    "unknown",
+]
+ResponseDelayReason = Literal[
+    "material_inventory_check",
+    "raw_material_supplier_confirmation",
+    "capacity_check",
+    "subsupplier_process_confirmation",
+    "low_engagement",
+    "careful_quotation",
+    "timezone_or_holiday",
+    "unknown",
+]
 
 
 class GLTGCaseContext(BaseModel):
@@ -130,6 +157,106 @@ class GLTGBehaviorFeatures(BaseModel):
     pair: GLTGPairBehaviorFeatures = Field(default_factory=GLTGPairBehaviorFeatures)
 
 
+class GLTGRequirementFactors(BaseModel):
+    requirement_completeness_score: float | None = Field(default=None, ge=0, le=1)
+    requirement_volatility_score: float | None = Field(default=None, ge=0, le=1)
+    deadline_strictness_score: float | None = Field(default=None, ge=0, le=1)
+    quality_requirement_level_score: float | None = Field(default=None, ge=0, le=1)
+    packaging_complexity_score: float | None = Field(default=None, ge=0, le=1)
+    sample_approval_delay_score: float | None = Field(default=None, ge=0, le=1)
+    payment_delay_risk: float | None = Field(default=None, ge=0, le=1)
+
+
+class GLTGSupplierExecutionFactors(BaseModel):
+    supplier_execution_mode: SupplierExecutionMode = "unknown"
+    in_house_capability_confidence: float | None = Field(default=None, ge=0, le=1)
+    upstream_dependency_probability: float | None = Field(default=None, ge=0, le=1)
+    execution_control_score: float | None = Field(default=None, ge=0, le=1)
+    capacity_utilization_ratio: float | None = Field(default=None, ge=0)
+    nominal_daily_capacity: float | None = Field(default=None, ge=0)
+    effective_daily_capacity: float | None = Field(default=None, ge=0)
+    priority_factor: float | None = Field(default=None, ge=0)
+
+
+class GLTGMaterialFactors(BaseModel):
+    material_availability_status: MaterialAvailabilityStatus = "unknown"
+    stock_coverage_ratio: float | None = Field(default=None, ge=0)
+    material_availability_confidence: float | None = Field(default=None, ge=0, le=1)
+    raw_material_supplier_confirmation_probability: float | None = Field(default=None, ge=0, le=1)
+    raw_material_lead_time_estimate_days: float | None = Field(default=None, ge=0)
+    raw_material_lead_time_uncertainty_score: float | None = Field(default=None, ge=0, le=1)
+    substitute_material_probability: float | None = Field(default=None, ge=0, le=1)
+    material_lock_required: bool = False
+    material_lock_validity_days: float | None = Field(default=None, ge=0)
+    historical_material_delay_rate: float | None = Field(default=None, ge=0, le=1)
+
+
+class GLTGProcessingFactors(BaseModel):
+    process_complexity_score: float | None = Field(default=None, ge=0, le=1)
+    customization_level_score: float | None = Field(default=None, ge=0, le=1)
+    tooling_required: bool = False
+    tooling_days: float | None = Field(default=None, ge=0)
+    sample_required: bool = False
+    sample_days: float | None = Field(default=None, ge=0)
+    color_approval_required: bool = False
+    color_approval_days: float | None = Field(default=None, ge=0)
+    external_subprocess_dependency_score: float | None = Field(default=None, ge=0, le=1)
+    setup_days: float | None = Field(default=None, ge=0)
+    subprocess_days: float | None = Field(default=None, ge=0)
+    expected_yield_rate: float | None = Field(default=None, ge=0, le=1)
+    qc_intensity_score: float | None = Field(default=None, ge=0, le=1)
+    rework_probability: float | None = Field(default=None, ge=0, le=1)
+    rework_days_if_triggered: float | None = Field(default=None, ge=0)
+
+
+class GLTGLogisticsTradeFactors(BaseModel):
+    incoterms: str | None = None
+    logistics_mode: str | None = None
+    route_baseline_days: float | None = Field(default=None, ge=0)
+    departure_frequency_days: float | None = Field(default=None, ge=0)
+    freight_space_risk: float | None = Field(default=None, ge=0, le=1)
+    export_doc_readiness_score: float | None = Field(default=None, ge=0, le=1)
+    customs_inspection_probability: float | None = Field(default=None, ge=0, le=1)
+    trade_compliance_risk: float | None = Field(default=None, ge=0, le=1)
+    origin_inland_days: float | None = Field(default=None, ge=0)
+    destination_inland_days: float | None = Field(default=None, ge=0)
+    import_clearance_days: float | None = Field(default=None, ge=0)
+    calendar_disruption_score: float | None = Field(default=None, ge=0, le=1)
+    logistics_disruption_score: float | None = Field(default=None, ge=0, le=1)
+
+
+class GLTGCommunicationBehaviorFactors(BaseModel):
+    supplier_response_delay_ratio: float | None = Field(default=None, ge=0)
+    business_hours_delay_ratio: float | None = Field(default=None, ge=0)
+    quote_completeness_score: float | None = Field(default=None, ge=0, le=1)
+    quote_confidence_score: float | None = Field(default=None, ge=0, le=1)
+    most_likely_response_delay_reason: ResponseDelayReason | None = None
+    low_engagement_probability: float | None = Field(default=None, ge=0, le=1)
+    careful_quotation_probability: float | None = Field(default=None, ge=0, le=1)
+    missing_lead_time: bool = False
+    missing_material_status: bool = False
+    supplier_response_fast: bool = False
+    unsupported_precise_leadtime_signal: bool = False
+    material_keywords: float | None = Field(default=None, ge=0, le=1)
+    explicit_material_supplier_signal: float | None = Field(default=None, ge=0, le=1)
+    capacity_keywords: float | None = Field(default=None, ge=0, le=1)
+    production_schedule_keywords: float | None = Field(default=None, ge=0, le=1)
+    detailed_breakdown_signal: float | None = Field(default=None, ge=0, le=1)
+    explicit_checking_signal: float | None = Field(default=None, ge=0, le=1)
+    non_working_time_overlap: float | None = Field(default=None, ge=0, le=1)
+    holiday_calendar_match: float | None = Field(default=None, ge=0, le=1)
+    no_clear_reason_signal: float | None = Field(default=None, ge=0, le=1)
+
+
+class GLTGTradeProcessingFactors(BaseModel):
+    requirement: GLTGRequirementFactors = Field(default_factory=GLTGRequirementFactors)
+    supplier_execution: GLTGSupplierExecutionFactors = Field(default_factory=GLTGSupplierExecutionFactors)
+    material: GLTGMaterialFactors = Field(default_factory=GLTGMaterialFactors)
+    processing: GLTGProcessingFactors = Field(default_factory=GLTGProcessingFactors)
+    logistics_trade: GLTGLogisticsTradeFactors = Field(default_factory=GLTGLogisticsTradeFactors)
+    behavior: GLTGCommunicationBehaviorFactors = Field(default_factory=GLTGCommunicationBehaviorFactors)
+
+
 class GLTGSimulationConstraintsV2(BaseModel):
     lead_time_confidence: LeadTimeConfidence = "P80"
     fallback_supplier_policy: str = "recommend_if_risk_high"
@@ -147,6 +274,7 @@ class GLTGSimulationRequestV2(BaseModel):
     supplier: GLTGSupplierInputV2 = Field(default_factory=GLTGSupplierInputV2)
     historical_baseline: GLTGHistoricalBaseline = Field(default_factory=GLTGHistoricalBaseline)
     behavior_features: GLTGBehaviorFeatures = Field(default_factory=GLTGBehaviorFeatures)
+    trade_processing_factors: GLTGTradeProcessingFactors = Field(default_factory=GLTGTradeProcessingFactors)
     source_observation_ids: list[str] = Field(default_factory=list)
     constraints: GLTGSimulationConstraintsV2 = Field(default_factory=GLTGSimulationConstraintsV2)
 
@@ -160,11 +288,48 @@ class GLTGQuantiles(BaseModel):
 class GLTGComponentBreakdown(BaseModel):
     base_production_days: float = 0.0
     base_procurement_days: float = 0.0
+    requirement_confirmation_days: float = 0.0
     supplier_response_buffer_days: float = 0.0
+    material_confirmation_days: float = 0.0
+    material_procurement_days: float = 0.0
+    preproduction_days: float = 0.0
+    capacity_queue_days: float = 0.0
+    production_days: float = 0.0
+    subprocess_days: float = 0.0
+    qc_days: float = 0.0
+    expected_rework_days: float = 0.0
+    packaging_days: float = 0.0
+    export_preparation_days: float = 0.0
+    origin_inland_days: float = 0.0
+    departure_wait_days: float = 0.0
+    main_freight_days: float = 0.0
+    import_clearance_days: float = 0.0
+    destination_inland_days: float = 0.0
     supplier_uncertainty_buffer_days: float = 0.0
     buyer_decision_buffer_days: float = 0.0
     logistics_buffer_days: float = 0.0
     risk_buffer_days: float = 0.0
+
+
+class GLTGRiskDecomposition(BaseModel):
+    engagement_risk: float = 0.0
+    execution_control_risk: float = 0.0
+    upstream_dependency_risk: float = 0.0
+    material_availability_risk: float = 0.0
+    capacity_risk: float = 0.0
+    process_complexity_risk: float = 0.0
+    quality_rework_risk: float = 0.0
+    logistics_risk: float = 0.0
+    customs_compliance_risk: float = 0.0
+    buyer_delay_risk: float = 0.0
+    quote_confidence_penalty: float = 0.0
+    lead_time_uncertainty_risk: float = 0.0
+
+
+class GLTGResponseDelayReasonInference(BaseModel):
+    most_likely_reason: ResponseDelayReason = "unknown"
+    confidence: float = 0.0
+    probabilities: dict[str, float] = Field(default_factory=dict)
 
 
 class GLTGRiskOutput(BaseModel):
@@ -195,6 +360,10 @@ class GLTGSimulationResponseV2(BaseModel):
     calibration_version: str = "none"
     quantiles: GLTGQuantiles
     components: GLTGComponentBreakdown
+    risk_decomposition: GLTGRiskDecomposition = Field(default_factory=GLTGRiskDecomposition)
+    response_delay_reason_inference: GLTGResponseDelayReasonInference = Field(
+        default_factory=GLTGResponseDelayReasonInference
+    )
     risk: GLTGRiskOutput
     explanation_json: dict[str, Any] = Field(default_factory=dict)
     warnings: list[GLTGWarningV2] = Field(default_factory=list)

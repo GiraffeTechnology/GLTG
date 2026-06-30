@@ -12,6 +12,8 @@ from .schemas import (
     GLTGComponentBreakdown,
     GLTGPersistenceRef,
     GLTGQuantiles,
+    GLTGResponseDelayReasonInference,
+    GLTGRiskDecomposition,
     GLTGRiskOutput,
     GLTGSimulationRequestV2,
     GLTGSimulationResponseV2,
@@ -41,6 +43,16 @@ AIR_TRANSIT_DAYS = {
     "london": 2,
     "rotterdam": 2,
 }
+MATERIAL_STATUS_RISK = {
+    "in_stock": 0.05,
+    "reserved_stock": 0.10,
+    "partial_stock": 0.45,
+    "supplier_confirmation_required": 0.65,
+    "not_available": 0.90,
+    "substitute_material_required": 0.85,
+    "unknown": 0.70,
+}
+TRADER_MODES = {"trader", "broker"}
 
 
 @dataclass
@@ -57,16 +69,38 @@ class AdjustmentState:
     explanations: list[dict[str, Any]] = field(default_factory=list)
 
 
+@dataclass
+class TradeProcessingCalculation:
+    central_shift_days: float = 0.0
+    uncertainty_buffer_days: float = 0.0
+    risk_decomposition: GLTGRiskDecomposition = field(default_factory=GLTGRiskDecomposition)
+    response_delay_reason_inference: GLTGResponseDelayReasonInference = field(
+        default_factory=GLTGResponseDelayReasonInference
+    )
+    execution_control_score: float = 0.0
+    upstream_dependency_probability: float = 0.0
+    material_availability_risk: float = 0.0
+    quote_confidence_score: float = 0.0
+
+
 class BehavioralLeadTimeSimulator:
     """Composes baseline quantiles with deterministic behavior adjustments."""
 
     def simulate(self, req: GLTGSimulationRequestV2) -> GLTGSimulationResponseV2:
         base_q, components, baseline_source = self._baseline(req)
         state = self._behavior_adjustments(req)
+        trade_calc = self._trade_processing_adjustments(req, components, state)
 
-        shift = state.supplier_response_buffer + state.buyer_decision_buffer
-        uncertainty = state.supplier_uncertainty_buffer + state.risk_buffer
-        if self._has_distribution(req):
+        shift = state.supplier_response_buffer + state.buyer_decision_buffer + trade_calc.central_shift_days
+        uncertainty = state.supplier_uncertainty_buffer + state.risk_buffer + trade_calc.uncertainty_buffer_days
+        if self._has_trade_processing_factors(req):
+            p50, p80, p90 = self._compose_trade_processing_spread(
+                base_q,
+                shift,
+                trade_calc.risk_decomposition.lead_time_uncertainty_risk,
+            )
+            composer = "trade_processing_factor_spread"
+        elif self._has_distribution(req):
             p50, p80, p90 = self._compose_pseudo_lognormal(base_q, shift, uncertainty, state.delta_sigma)
             composer = "pseudo_lognormal"
         else:
@@ -106,9 +140,11 @@ class BehavioralLeadTimeSimulator:
                 p90_days=round(p90, 2),
             ),
             components=components,
+            risk_decomposition=trade_calc.risk_decomposition,
+            response_delay_reason_inference=trade_calc.response_delay_reason_inference,
             risk=risk,
             explanation_json={
-                "summary": self._summary(risk, baseline_source),
+                "summary": self._summary(risk, baseline_source, trade_calc.response_delay_reason_inference),
                 "baseline_source": baseline_source,
                 "composer": composer,
                 "composition_parameters": {
@@ -117,6 +153,12 @@ class BehavioralLeadTimeSimulator:
                     "delta_sigma": round(state.delta_sigma, 4),
                 },
                 "adjustments": state.explanations,
+                "trade_processing_factor_scores": {
+                    "material_availability_risk": trade_calc.material_availability_risk,
+                    "upstream_dependency_probability": trade_calc.upstream_dependency_probability,
+                    "execution_control_score": trade_calc.execution_control_score,
+                    "quote_confidence_score": trade_calc.quote_confidence_score,
+                },
                 "source_observation_ids": req.source_observation_ids,
             },
             warnings=warnings,
@@ -156,6 +198,123 @@ class BehavioralLeadTimeSimulator:
             base_q.p90_days + shift_days + 1.2 * uncertainty_days,
         )
 
+    @staticmethod
+    def _compose_trade_processing_spread(
+        base_q: GLTGQuantiles,
+        central_shift_days: float,
+        lead_time_uncertainty_risk: float,
+    ) -> tuple[float, float, float]:
+        p50 = base_q.p50_days + central_shift_days
+        base_spread = max(3.0, base_q.p80_days - base_q.p50_days, (base_q.p90_days - base_q.p50_days) * 0.7)
+        p80 = p50 + base_spread * (1 + 0.8 * lead_time_uncertainty_risk)
+        p90 = p50 + base_spread * (1 + 1.3 * lead_time_uncertainty_risk)
+        return p50, p80, p90
+
+    def _trade_processing_adjustments(
+        self,
+        req: GLTGSimulationRequestV2,
+        components: GLTGComponentBreakdown,
+        state: AdjustmentState,
+    ) -> TradeProcessingCalculation:
+        if not self._has_trade_processing_factors(req):
+            return TradeProcessingCalculation()
+
+        f = req.trade_processing_factors
+        material_risk = self._material_availability_risk(req)
+        upstream_dependency = self._upstream_dependency_probability(req)
+        execution_control = self._execution_control_score(req, upstream_dependency)
+        response_inference = self._response_delay_reason_inference(req, execution_control, material_risk)
+        capacity_risk = self._capacity_queue_risk(f.supplier_execution.capacity_utilization_ratio)
+        process_multiplier = self._process_complexity_multiplier(req)
+        quality_rework_risk = _clip(_nz(f.processing.rework_probability, 0.0))
+        logistics_risk = _clip(
+            0.35 * _nz(f.logistics_trade.freight_space_risk, 0.0)
+            + 0.25 * _nz(f.logistics_trade.logistics_disruption_score, 0.0)
+            + 0.20 * _nz(f.logistics_trade.calendar_disruption_score, 0.0)
+            + 0.20 * (1 - _nz(f.logistics_trade.export_doc_readiness_score, 0.85))
+        )
+        customs_compliance_risk = _clip(
+            0.55 * _nz(f.logistics_trade.customs_inspection_probability, 0.0)
+            + 0.45 * _nz(f.logistics_trade.trade_compliance_risk, 0.0)
+        )
+        buyer_delay_risk = _clip(
+            0.35 * _nz(f.requirement.requirement_volatility_score, 0.0)
+            + 0.30 * _nz(f.requirement.sample_approval_delay_score, 0.0)
+            + 0.20 * _nz(f.requirement.payment_delay_risk, 0.0)
+            + 0.15 * _nz(req.behavior_features.buyer.buyer_decision_delay_score, 0.0)
+        )
+        quote_confidence = self._quote_confidence_score(req, execution_control)
+        quote_confidence_penalty = _clip(1 - quote_confidence)
+        engagement_risk = _clip(
+            _first(
+                f.behavior.low_engagement_probability,
+                response_inference.probabilities.get("low_engagement"),
+                0.0,
+            )
+        )
+
+        risk_decomposition = GLTGRiskDecomposition(
+            engagement_risk=round(engagement_risk, 3),
+            execution_control_risk=round(_clip(1 - execution_control), 3),
+            upstream_dependency_risk=round(upstream_dependency, 3),
+            material_availability_risk=round(material_risk, 3),
+            capacity_risk=round(capacity_risk, 3),
+            process_complexity_risk=round(_clip((process_multiplier - 1) / 1), 3),
+            quality_rework_risk=round(quality_rework_risk, 3),
+            logistics_risk=round(logistics_risk, 3),
+            customs_compliance_risk=round(customs_compliance_risk, 3),
+            buyer_delay_risk=round(buyer_delay_risk, 3),
+            quote_confidence_penalty=round(quote_confidence_penalty, 3),
+        )
+        risk_decomposition.lead_time_uncertainty_risk = round(_clip(
+            0.18 * material_risk
+            + 0.16 * upstream_dependency
+            + 0.14 * (1 - execution_control)
+            + 0.12 * capacity_risk
+            + 0.10 * risk_decomposition.process_complexity_risk
+            + 0.10 * quality_rework_risk
+            + 0.10 * logistics_risk
+            + 0.08 * customs_compliance_risk
+            + 0.07 * buyer_delay_risk
+            + 0.05 * quote_confidence_penalty
+        ), 3)
+
+        self._apply_trade_processing_components(
+            req,
+            components,
+            process_multiplier,
+            material_risk,
+            capacity_risk,
+            risk_decomposition,
+        )
+        self._apply_trade_processing_warnings(req, state, quote_confidence, response_inference, risk_decomposition)
+
+        central_shift_days = (
+            components.requirement_confirmation_days
+            + components.material_confirmation_days
+            + components.material_procurement_days
+            + components.preproduction_days
+            + components.capacity_queue_days
+            + components.expected_rework_days
+            + components.packaging_days
+            + components.export_preparation_days
+            + components.origin_inland_days
+            + components.departure_wait_days
+            + components.import_clearance_days
+            + components.destination_inland_days
+        )
+        uncertainty_buffer_days = 4.0 + 10.0 * risk_decomposition.lead_time_uncertainty_risk
+        return TradeProcessingCalculation(
+            central_shift_days=round(central_shift_days, 2),
+            uncertainty_buffer_days=round(uncertainty_buffer_days, 2),
+            risk_decomposition=risk_decomposition,
+            response_delay_reason_inference=response_inference,
+            execution_control_score=round(execution_control, 3),
+            upstream_dependency_probability=round(upstream_dependency, 3),
+            material_availability_risk=round(material_risk, 3),
+            quote_confidence_score=round(quote_confidence, 3),
+        )
+
     def _baseline(
         self, req: GLTGSimulationRequestV2
     ) -> tuple[GLTGQuantiles, GLTGComponentBreakdown, str]:
@@ -190,6 +349,341 @@ class BehavioralLeadTimeSimulator:
         hist = req.historical_baseline
         return bool(hist.baseline_p50_days and hist.baseline_p80_days and hist.baseline_p90_days)
 
+    @staticmethod
+    def _has_trade_processing_factors(req: GLTGSimulationRequestV2) -> bool:
+        return req.trade_processing_factors.model_dump(exclude_defaults=True, exclude_none=True) != {}
+
+    def _material_availability_risk(self, req: GLTGSimulationRequestV2) -> float:
+        material = req.trade_processing_factors.material
+        status_risk = MATERIAL_STATUS_RISK.get(material.material_availability_status, MATERIAL_STATUS_RISK["unknown"])
+        confidence = _first(material.material_availability_confidence, 0.35)
+        return _clip(
+            0.25 * status_risk
+            + 0.20 * (1 - confidence)
+            + 0.20 * _nz(material.raw_material_supplier_confirmation_probability, 0.0)
+            + 0.15 * _nz(material.raw_material_lead_time_uncertainty_score, 0.0)
+            + 0.10 * _nz(material.substitute_material_probability, 0.0)
+            + 0.10 * _nz(material.historical_material_delay_rate, 0.0)
+        )
+
+    def _execution_control_score(self, req: GLTGSimulationRequestV2, upstream_dependency: float) -> float:
+        factors = req.trade_processing_factors
+        supplier = factors.supplier_execution
+        material = factors.material
+        behavior = factors.behavior
+        provided = supplier.execution_control_score
+        if provided is not None:
+            return _clip(provided)
+        quote_completeness = _first(behavior.quote_completeness_score, req.behavior_features.supplier.quote_completeness_score, 0.65)
+        on_time = _first(
+            req.behavior_features.supplier.historical_on_time_delivery_rate,
+            req.historical_baseline.on_time_delivery_rate,
+            0.65,
+        )
+        score = (
+            0.35 * _first(supplier.in_house_capability_confidence, 0.45)
+            + 0.20 * on_time
+            + 0.15 * quote_completeness
+            + 0.15 * _first(material.material_availability_confidence, 0.35)
+            + 0.15 * (1 - upstream_dependency)
+        )
+        if supplier.supplier_execution_mode in TRADER_MODES:
+            score -= 0.12
+        return _clip(score)
+
+    def _upstream_dependency_probability(self, req: GLTGSimulationRequestV2) -> float:
+        factors = req.trade_processing_factors
+        supplier = factors.supplier_execution
+        material = factors.material
+        behavior = factors.behavior
+        if supplier.upstream_dependency_probability is not None:
+            return _clip(supplier.upstream_dependency_probability)
+        explicit_upstream = _first(req.behavior_features.supplier.upstream_confirmation_signal, 0.0)
+        missing_material_status = 1.0 if behavior.missing_material_status or material.material_availability_status == "unknown" else 0.0
+        trader_score = 1.0 if supplier.supplier_execution_mode in TRADER_MODES else 0.0
+        response_delay_score = _ratio_score(_first(behavior.supplier_response_delay_ratio, req.behavior_features.supplier.response_delay_ratio, 1.0))
+        historical_error_score = _clip(abs(_nz(req.historical_baseline.historical_quoted_vs_actual_error_days, 0.0)) / 10)
+        quote_revision_score = _clip(_nz(req.behavior_features.supplier.quote_revision_count, 0.0) / 4)
+        return _clip(
+            0.25 * explicit_upstream
+            + 0.20 * _nz(material.raw_material_supplier_confirmation_probability, 0.0)
+            + 0.15 * missing_material_status
+            + 0.10 * trader_score
+            + 0.10 * _nz(factors.processing.external_subprocess_dependency_score, 0.0)
+            + 0.10 * quote_revision_score
+            + 0.05 * response_delay_score
+            + 0.05 * historical_error_score
+        )
+
+    def _response_delay_reason_inference(
+        self,
+        req: GLTGSimulationRequestV2,
+        execution_control: float,
+        material_risk: float,
+    ) -> GLTGResponseDelayReasonInference:
+        f = req.trade_processing_factors
+        behavior = f.behavior
+        material = f.material
+        supplier = f.supplier_execution
+        provided = behavior.most_likely_response_delay_reason
+        if provided:
+            return GLTGResponseDelayReasonInference(
+                most_likely_reason=provided,
+                confidence=1.0,
+                probabilities={provided: 1.0},
+            )
+        response_delay_score = _ratio_score(_first(behavior.supplier_response_delay_ratio, req.behavior_features.supplier.response_delay_ratio, 1.0))
+        missing_material_status = 1.0 if behavior.missing_material_status or material.material_availability_status == "unknown" else 0.0
+        incomplete_quote_score = 1 - _first(behavior.quote_completeness_score, req.behavior_features.supplier.quote_completeness_score, 0.65)
+        low_relationship_strength_score = 1 - _first(req.behavior_features.pair.relationship_strength_score, 0.6)
+        in_house = _first(supplier.in_house_capability_confidence, execution_control)
+        complete_quote_score = _first(behavior.quote_completeness_score, req.behavior_features.supplier.quote_completeness_score, 0.65)
+        scores = {
+            "material_inventory_check": (
+                0.35 * _nz(behavior.material_keywords, 0.0)
+                + 0.25 * missing_material_status
+                + 0.20 * response_delay_score
+                + 0.20 * in_house
+            ),
+            "raw_material_supplier_confirmation": (
+                0.40 * _nz(behavior.explicit_material_supplier_signal, 0.0)
+                + 0.20 * _nz(material.raw_material_supplier_confirmation_probability, 0.0)
+                + 0.15 * missing_material_status
+                + 0.15 * response_delay_score
+                + 0.10 * _nz(material.historical_material_delay_rate, material_risk)
+            ),
+            "capacity_check": (
+                0.35 * _nz(behavior.capacity_keywords, 0.0)
+                + 0.25 * _nz(f.supplier_execution.capacity_utilization_ratio, 0.0)
+                + 0.20 * _nz(behavior.production_schedule_keywords, 0.0)
+                + 0.20 * in_house
+            ),
+            "subsupplier_process_confirmation": (
+                0.45 * _nz(f.processing.external_subprocess_dependency_score, 0.0)
+                + 0.25 * _nz(f.supplier_execution.upstream_dependency_probability, 0.0)
+                + 0.20 * response_delay_score
+                + 0.10 * missing_material_status
+            ),
+            "low_engagement": (
+                0.30 * response_delay_score
+                + 0.20 * incomplete_quote_score
+                + 0.20 * (1 - _first(req.behavior_features.supplier.quote_response_rate, 0.75))
+                + 0.15 * low_relationship_strength_score
+                + 0.15 * _first(behavior.no_clear_reason_signal, 0.0)
+            ),
+            "careful_quotation": (
+                0.30 * complete_quote_score
+                + 0.25 * _nz(behavior.detailed_breakdown_signal, 0.0)
+                + 0.20 * _nz(behavior.explicit_checking_signal, 0.0)
+                + 0.15 * _first(req.behavior_features.supplier.lead_time_confidence_score, 0.65)
+                + 0.10 * in_house
+            ),
+            "timezone_or_holiday": (
+                0.50 * _nz(behavior.non_working_time_overlap, 0.0)
+                + 0.30 * _nz(behavior.holiday_calendar_match, 0.0)
+                + 0.20 * (1 - response_delay_score)
+            ),
+            "unknown": 0.05,
+        }
+        exps = {key: math.exp(value) for key, value in scores.items()}
+        total = sum(exps.values()) or 1.0
+        probabilities = {key: round(value / total, 3) for key, value in exps.items()}
+        reason = max(probabilities, key=probabilities.get)
+        return GLTGResponseDelayReasonInference(
+            most_likely_reason=reason,
+            confidence=probabilities[reason],
+            probabilities=probabilities,
+        )
+
+    def _quote_confidence_score(self, req: GLTGSimulationRequestV2, execution_control: float) -> float:
+        f = req.trade_processing_factors
+        behavior = f.behavior
+        material = f.material
+        provided = behavior.quote_confidence_score
+        if provided is not None:
+            score = provided
+        else:
+            quote_completeness = _first(behavior.quote_completeness_score, req.behavior_features.supplier.quote_completeness_score, 0.65)
+            material_confidence = _first(material.material_availability_confidence, 0.35)
+            lead_time_confidence = _first(req.behavior_features.supplier.lead_time_confidence_score, req.supplier.confidence, 0.65)
+            historical_quote_accuracy = _clip(1 - abs(_nz(req.historical_baseline.historical_quoted_vs_actual_error_days, 3.0)) / 14)
+            source_evidence = 0.85 if req.source_observation_ids else 0.35
+            score = (
+                0.25 * quote_completeness
+                + 0.20 * material_confidence
+                + 0.15 * lead_time_confidence
+                + 0.15 * historical_quote_accuracy
+                + 0.10 * execution_control
+                + 0.10 * source_evidence
+                + 0.05 * _nz(behavior.detailed_breakdown_signal, 0.0)
+            )
+        unsupported_fast_quote = (
+            behavior.supplier_response_fast
+            and material.material_availability_status in {"unknown", "supplier_confirmation_required"}
+            and req.supplier.supplier_stated_lead_time_days is not None
+            and material.material_availability_confidence in {None, 0.0}
+        ) or behavior.unsupported_precise_leadtime_signal
+        if unsupported_fast_quote:
+            score -= 0.15
+        return _clip(score)
+
+    @staticmethod
+    def _capacity_queue_risk(utilization: float | None) -> float:
+        if utilization is None or utilization <= 0.70:
+            return 0.0
+        if utilization <= 0.90:
+            return _clip((utilization - 0.70) / 0.20)
+        return 1.0
+
+    def _process_complexity_multiplier(self, req: GLTGSimulationRequestV2) -> float:
+        f = req.trade_processing_factors
+        multiplier = (
+            1.0
+            + 0.15 * _nz(f.processing.customization_level_score, 0.0)
+            + 0.10 * _nz(f.requirement.quality_requirement_level_score, 0.0)
+            + 0.10 * _nz(f.requirement.packaging_complexity_score, 0.0)
+            + 0.15 * _nz(f.processing.external_subprocess_dependency_score, 0.0)
+            + 0.10 * float(f.processing.tooling_required)
+            + 0.10 * float(f.processing.color_approval_required)
+        )
+        return min(2.0, max(1.0, multiplier))
+
+    def _apply_trade_processing_components(
+        self,
+        req: GLTGSimulationRequestV2,
+        components: GLTGComponentBreakdown,
+        process_multiplier: float,
+        material_risk: float,
+        capacity_risk: float,
+        risk_decomposition: GLTGRiskDecomposition,
+    ) -> None:
+        f = req.trade_processing_factors
+        components.requirement_confirmation_days = round(
+            3.0 * (1 - _first(f.requirement.requirement_completeness_score, 0.85)),
+            2,
+        )
+        material_days = self._material_procurement_days(req)
+        components.material_confirmation_days = round(2.0 * material_risk, 2)
+        components.material_procurement_days = round(material_days, 2)
+        components.preproduction_days = round(
+            _nz(f.processing.tooling_days, 0.0)
+            + (f.processing.sample_days if f.processing.sample_required and f.processing.sample_days else 0.0)
+            + (f.processing.color_approval_days if f.processing.color_approval_required and f.processing.color_approval_days else 0.0)
+            + _nz(f.processing.setup_days, 0.0),
+            2,
+        )
+        effective_capacity = self._effective_daily_capacity(req, process_multiplier)
+        components.production_days = round(
+            _nz(f.processing.setup_days, 0.0)
+            + math.ceil(req.order.quantity / max(effective_capacity, 1.0))
+            + _nz(f.processing.subprocess_days, 0.0),
+            2,
+        )
+        components.subprocess_days = round(_nz(f.processing.subprocess_days, 0.0), 2)
+        components.capacity_queue_days = round(4.0 * capacity_risk / max(_nz(f.supplier_execution.priority_factor, 1.0), 0.1), 2)
+        components.qc_days = round(max(components.qc_days, 2.0 + 3.0 * _nz(f.processing.qc_intensity_score, 0.0)), 2)
+        components.expected_rework_days = round(
+            _nz(f.processing.rework_probability, 0.0) * _nz(f.processing.rework_days_if_triggered, 5.0),
+            2,
+        )
+        components.packaging_days = round(1.0 + 2.0 * _nz(f.requirement.packaging_complexity_score, 0.0), 2)
+        components.export_preparation_days = round(1.0 + 2.0 * (1 - _nz(f.logistics_trade.export_doc_readiness_score, 0.85)), 2)
+        components.origin_inland_days = round(_nz(f.logistics_trade.origin_inland_days, 1.0), 2)
+        departure_frequency = _nz(f.logistics_trade.departure_frequency_days, 7.0)
+        components.departure_wait_days = round(
+            departure_frequency / 2 + _nz(f.logistics_trade.freight_space_risk, 0.0) * departure_frequency,
+            2,
+        )
+        components.main_freight_days = round(
+            _first(f.logistics_trade.route_baseline_days, components.logistics_buffer_days, 0.0),
+            2,
+        )
+        components.import_clearance_days = round(_nz(f.logistics_trade.import_clearance_days, 2.0), 2)
+        components.destination_inland_days = round(_nz(f.logistics_trade.destination_inland_days, 2.0), 2)
+        components.buyer_decision_buffer_days += round(
+            _nz(req.behavior_features.buyer.buyer_decision_delay_score, 0.0) * 5.0
+            + _nz(f.requirement.requirement_volatility_score, 0.0) * 4.0
+            + _nz(f.requirement.sample_approval_delay_score, 0.0) * _nz(f.processing.sample_days, 3.0)
+            + _nz(f.requirement.payment_delay_risk, 0.0) * 3.0,
+            2,
+        )
+        components.risk_buffer_days += round(6.0 * risk_decomposition.lead_time_uncertainty_risk, 2)
+        components.base_production_days = round(max(components.base_production_days, components.production_days), 2)
+        components.base_procurement_days = round(max(components.base_procurement_days, components.material_procurement_days), 2)
+        components.logistics_buffer_days = round(
+            max(
+                components.logistics_buffer_days,
+                components.export_preparation_days
+                + components.origin_inland_days
+                + components.departure_wait_days
+                + components.main_freight_days
+                + components.import_clearance_days
+                + components.destination_inland_days,
+            ),
+            2,
+        )
+
+    def _material_procurement_days(self, req: GLTGSimulationRequestV2) -> float:
+        material = req.trade_processing_factors.material
+        status = material.material_availability_status
+        if status == "in_stock":
+            return 0.0
+        if status == "reserved_stock":
+            return 1.0
+        if status == "partial_stock":
+            shortage_ratio = 1 - min(_nz(material.stock_coverage_ratio, 0.5), 1.0)
+            return max(1.0, _nz(material.raw_material_lead_time_estimate_days, 7.0) * shortage_ratio)
+        if status == "supplier_confirmation_required":
+            return _nz(material.raw_material_lead_time_estimate_days, 7.0)
+        if status == "substitute_material_required":
+            return 3.0 + _nz(material.raw_material_lead_time_estimate_days, 7.0)
+        if status == "not_available":
+            return max(10.0, _nz(material.raw_material_lead_time_estimate_days, 12.0))
+        return 10.0 * (1 + _nz(material.raw_material_lead_time_uncertainty_score, 0.4))
+
+    def _effective_daily_capacity(self, req: GLTGSimulationRequestV2, process_multiplier: float) -> float:
+        supplier = req.trade_processing_factors.supplier_execution
+        if supplier.effective_daily_capacity:
+            return supplier.effective_daily_capacity
+        nominal = _first(supplier.nominal_daily_capacity, req.supplier.capacity_per_day, DEFAULT_DAILY_CAPACITY)
+        capacity_availability = max(0.0, 1 - _nz(supplier.capacity_utilization_ratio, 0.0))
+        priority_factor = _nz(supplier.priority_factor, 1.0)
+        yield_rate = _first(req.trade_processing_factors.processing.expected_yield_rate, 0.95)
+        return max(1.0, nominal * max(capacity_availability, 0.15) * yield_rate * priority_factor / process_multiplier)
+
+    def _apply_trade_processing_warnings(
+        self,
+        req: GLTGSimulationRequestV2,
+        state: AdjustmentState,
+        quote_confidence: float,
+        response_inference: GLTGResponseDelayReasonInference,
+        risk_decomposition: GLTGRiskDecomposition,
+    ) -> None:
+        material = req.trade_processing_factors.material
+        behavior = req.trade_processing_factors.behavior
+        supplier = req.trade_processing_factors.supplier_execution
+        if material.material_availability_status in {"unknown", "supplier_confirmation_required", "partial_stock"}:
+            self._warn(state, "MATERIAL_AVAILABILITY_UNCERTAIN", "medium", "Material availability is not fully confirmed.")
+        if quote_confidence < 0.5:
+            state.manual_review_required = True
+            self._warn(state, "QUOTE_CONFIDENCE_LOW", "medium", "Quote confidence is low after material and evidence checks.")
+        if behavior.supplier_response_fast and material.material_availability_status in {"unknown", "supplier_confirmation_required"}:
+            state.manual_review_required = True
+            self._warn(state, "UNSUPPORTED_FAST_PRECISE_QUOTE", "medium", "Fast supplier response lacks material evidence for the stated lead time.")
+        if supplier.supplier_execution_mode in TRADER_MODES and risk_decomposition.upstream_dependency_risk >= 0.6:
+            state.fallback_supplier_required = True
+            self._warn(state, "TRADER_UPSTREAM_DEPENDENCY_HIGH", "medium", "Trader or broker path has high upstream dependency.")
+        if response_inference.most_likely_reason == "raw_material_supplier_confirmation":
+            self._explain(
+                state,
+                "supplier_response_delay_reason",
+                response_inference.most_likely_reason,
+                "P50 moderate material confirmation shift, P80/P90 material uncertainty widening",
+                "Slow response is classified as material supplier confirmation rather than low engagement.",
+            )
+        if risk_decomposition.lead_time_uncertainty_risk >= 0.65:
+            state.fallback_supplier_required = True
+
     def _components_from_request(self, req: GLTGSimulationRequestV2) -> GLTGComponentBreakdown:
         supplier = req.supplier
         order = req.order
@@ -206,22 +700,45 @@ class BehavioralLeadTimeSimulator:
         return GLTGComponentBreakdown(
             base_production_days=round(production, 2),
             base_procurement_days=round(procurement + qc, 2),
+            material_procurement_days=round(procurement, 2),
+            production_days=round(production, 2),
+            qc_days=round(qc, 2),
             logistics_buffer_days=round(logistics, 2),
+            main_freight_days=round(logistics, 2),
         )
 
     def _behavior_adjustments(self, req: GLTGSimulationRequestV2) -> AdjustmentState:
         s = req.behavior_features.supplier
         b = req.behavior_features.buyer
         state = AdjustmentState()
+        if self._has_trade_processing_factors(req):
+            trade = req.trade_processing_factors
+            response_delay_ratio = trade.behavior.supplier_response_delay_ratio
+            business_hours_delay_ratio = trade.behavior.business_hours_delay_ratio
+            quote_completeness_score = trade.behavior.quote_completeness_score
+            lead_time_revision_count = None
+            upstream_signal = trade.supplier_execution.upstream_dependency_probability
+            supplier_load = trade.supplier_execution.capacity_utilization_ratio
+            requirement_changes = None
+            buyer_decision_delay_score = None
+        else:
+            response_delay_ratio = s.response_delay_ratio
+            business_hours_delay_ratio = s.business_hours_delay_ratio
+            quote_completeness_score = s.quote_completeness_score
+            lead_time_revision_count = s.lead_time_revision_count
+            upstream_signal = s.upstream_confirmation_signal
+            supplier_load = s.supplier_current_load_signal
+            requirement_changes = b.requirement_change_count
+            buyer_decision_delay_score = b.buyer_decision_delay_score
 
-        self._supplier_response_delay(s.response_delay_ratio, state)
-        self._business_hours_delay(s.business_hours_delay_ratio, state)
-        self._quote_completeness(s.quote_completeness_score, state)
-        self._lead_time_revisions(s.lead_time_revision_count, state)
-        self._upstream_signal(s.upstream_confirmation_signal, state)
-        self._supplier_load(s.supplier_current_load_signal, state)
-        self._requirement_changes(b.requirement_change_count, state)
-        self._buyer_decision_delay(b.buyer_decision_delay_score, state)
+        self._supplier_response_delay(response_delay_ratio, state)
+        self._business_hours_delay(business_hours_delay_ratio, state)
+        self._quote_completeness(quote_completeness_score, state)
+        self._lead_time_revisions(lead_time_revision_count, state)
+        self._upstream_signal(upstream_signal, state)
+        self._supplier_load(supplier_load, state)
+        self._requirement_changes(requirement_changes, state)
+        self._buyer_decision_delay(buyer_decision_delay_score, state)
 
         relationship = req.behavior_features.pair.relationship_strength_score
         if relationship is not None and relationship < 0.3:
@@ -441,13 +958,25 @@ class BehavioralLeadTimeSimulator:
         })
 
     @staticmethod
-    def _summary(risk: GLTGRiskOutput, baseline_source: str) -> str:
-        return (
+    def _summary(
+        risk: GLTGRiskOutput,
+        baseline_source: str,
+        response_inference: GLTGResponseDelayReasonInference,
+    ) -> str:
+        summary = (
             f"{risk.selected_confidence_days} days selected from {baseline_source}; "
             f"deadline risk={risk.deadline_risk_level}, "
             f"fallback_required={risk.fallback_supplier_required}, "
             f"manual_review_required={risk.manual_review_required}."
         )
+        if response_inference.most_likely_reason != "unknown":
+            reason_label = response_inference.most_likely_reason.replace("_", " ")
+            summary += (
+                f" Supplier response delay reason is classified as "
+                f"{reason_label} "
+                f"(confidence={response_inference.confidence})."
+            )
+        return summary
 
 
 def _transit_days(destination: str | None, logistics_mode: str | None) -> int:
@@ -481,3 +1010,26 @@ def _baseline_stage_days(
         "qc_days": 6.0,
         "logistics_days": float(10 + _transit_days(destination, logistics_mode)),
     }
+
+
+def _clip(value: float, low: float = 0.0, high: float = 1.0) -> float:
+    return max(low, min(high, float(value)))
+
+
+def _nz(value: float | int | None, default: float = 0.0) -> float:
+    return float(default if value is None else value)
+
+
+def _first(*values: float | int | None) -> float:
+    for value in values:
+        if value is not None:
+            return float(value)
+    return 0.0
+
+
+def _ratio_score(ratio: float | None) -> float:
+    if ratio is None:
+        return 0.0
+    if ratio <= 1.0:
+        return 0.0
+    return _clip((float(ratio) - 1.0) / 4.0)
