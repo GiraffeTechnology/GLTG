@@ -1,0 +1,69 @@
+{
+  "ok": true,
+  "gltg_run_id": "GLTG_759f129574c7",
+  "model_version": "gltg-hybrid-v0.1.0",
+  "rule_version": "behavior-rules-v0.1.0",
+  "calibration_version": "none",
+  "quantiles": {
+    "p50_days": 43.0,
+    "p80_days": 62.92,
+    "p90_days": 74.81
+  },
+  "components": {
+    "base_production_days": 26.0,
+    "base_procurement_days": 23.0,
+    "supplier_response_buffer_days": 4,
+    "supplier_uncertainty_buffer_days": 6.0,
+    "buyer_decision_buffer_days": 7.0,
+    "logistics_buffer_days": 28.0,
+    "risk_buffer_days": 2.0
+  },
+  "risk": {
+    "deadline_risk_level": "medium_high",
+    "confidence_score": 0.392,
+    "fallback_supplier_required": true,
+    "manual_review_required": true,
+    "deadline_feasible": false,
+    "selected_confidence_days": 62.92
+  },
+  "explanation_json": {
+    "summary": "62.92 days selected from supplier_category_route; deadline risk=medium_high, fallback_required=True, manual_review_required=True.",
+    "baseline_source": "supplier_category_route",
+    "composer": "pseudo_lognormal",
+    "composition_parameters": {
+      "central_shift_days": 11.0,
+      "uncertainty_buffer_days": 8.0,
+      "delta_sigma": 0.2
+    },
+    "source_observation_ids": [
+      "GDB_SYN_V1_OBS_000001",
+      "GDB_SYN_V1_OBS_000002"
+    ]
+  },
+  "warnings": [
+    {
+      "code": "SUPPLIER_RESPONSE_DELAY_ANOMALY",
+      "severity": "medium",
+      "message": "Supplier response is at least 3x slower than baseline."
+    },
+    {
+      "code": "QUOTE_INCOMPLETE",
+      "severity": "medium",
+      "message": "Quote completeness is below 0.70."
+    },
+    {
+      "code": "BUYER_REQUIREMENT_VOLATILITY",
+      "severity": "medium",
+      "message": "Buyer requirements changed multiple times."
+    },
+    {
+      "code": "PERSISTENCE_NOT_CONFIGURED",
+      "severity": "low",
+      "message": "GLTG run id is generated, but giraffe-db persistence is not configured in this service build."
+    }
+  ],
+  "persistence": {
+    "persisted_to_giraffe_db": false,
+    "gltg_behavior_input_id": null
+  }
+}
