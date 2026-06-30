@@ -1,6 +1,22 @@
 # GLTG Trade Processing Time Factor Model
 
-This document captures the implemented GLTG v2 trade and processing factor layer.
+> **Status update — provider-agnostic LLM-assisted evaluator.**
+> GLTG's primary v2 model is now a **provider-agnostic LLM-assisted trade
+> lead-time risk evaluator** (Qwen3.5 default, mainstream-LLM compatible via a
+> provider adapter interface). See
+> [GLTG_PROVIDER_AGNOSTIC_LLM_ASSISTED_TRADE_RISK_EVALUATOR.md](GLTG_PROVIDER_AGNOSTIC_LLM_ASSISTED_TRADE_RISK_EVALUATOR.md).
+>
+> The trade/processing factors and deterministic formulas described below are
+> **no longer the primary GLTG intelligence layer**. They are retained as the
+> request vocabulary the LLM evaluator consumes, and as deterministic
+> guardrails / sanity checks / optional fallback only
+> (`src/gltg/evaluator/fallback_rules.py`, used when
+> `GLTG_EVALUATOR_MODE=fallback` or an allowed provider-failure fallback). The
+> default `/v2/lead-time/simulate` path does **not** use these formulas as the
+> primary evaluator.
+
+This document captures the GLTG v2 trade and processing factor vocabulary and
+the deterministic fallback layer.
 
 ## Objective
 

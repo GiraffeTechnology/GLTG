@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from ..behavioral import BehavioralLeadTimeSimulator
 from ..behavioral.schemas import (
     GLTGPathV2,
     GLTGPathsEnumerateRequestV2,
@@ -14,6 +13,7 @@ from ..behavioral.schemas import (
     GLTGSimulationRequestV2,
     GLTGSimulationResponseV2,
 )
+from ..evaluator import orchestrator as gltg_evaluator
 from ..version import __version__
 from ..services import engine_adapter
 from .schemas import (
@@ -28,7 +28,6 @@ from .schemas import (
 )
 
 router = APIRouter()
-_behavioral_simulator = BehavioralLeadTimeSimulator()
 
 
 @router.get("/health", response_model=HealthResponse, tags=["meta"])
@@ -74,7 +73,7 @@ def reforecast(req: ReforecastRequest) -> ReforecastResponse:
     tags=["lead-time-v2"],
 )
 def simulate_lead_time_v2(req: GLTGSimulationRequestV2) -> GLTGSimulationResponseV2:
-    return _behavioral_simulator.simulate(req)
+    return gltg_evaluator.evaluate(req)
 
 
 @router.post(
@@ -86,7 +85,7 @@ def enumerate_paths_v2(req: GLTGPathsEnumerateRequestV2) -> GLTGPathsEnumerateRe
     paths: list[GLTGPathV2] = []
     warnings = []
     for sim_req in req.simulations:
-        sim = _behavioral_simulator.simulate(sim_req)
+        sim = gltg_evaluator.evaluate(sim_req)
         paths.append(
             GLTGPathV2(
                 path_id=f"v2:{sim_req.supplier.supplier_id or sim_req.request_id}",
@@ -110,5 +109,5 @@ def enumerate_paths_v2(req: GLTGPathsEnumerateRequestV2) -> GLTGPathsEnumerateRe
     tags=["reforecast-v2"],
 )
 def reforecast_v2(req: GLTGReforecastRequestV2) -> GLTGReforecastResponseV2:
-    sim = _behavioral_simulator.simulate(req)
+    sim = gltg_evaluator.evaluate(req)
     return GLTGReforecastResponseV2(**sim.model_dump(), applied_events=req.events)

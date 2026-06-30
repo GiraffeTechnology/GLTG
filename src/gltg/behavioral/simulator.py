@@ -1,4 +1,11 @@
-"""Rule-based MVP for GLTG v2 behavior-aware lead-time simulation."""
+"""Deterministic rule-based lead-time engine (demoted to guardrail/fallback).
+
+This is NOT the primary GLTG v2 model. The provider-agnostic LLM-assisted
+evaluator (``gltg.evaluator``) is the default. These hard-coded formulas are
+retained only as deterministic guardrails / sanity checks / optional fallback,
+reached via ``gltg.evaluator.fallback_rules`` when ``GLTG_EVALUATOR_MODE=fallback``
+or when a provider fails and ``GLTG_ALLOW_RULE_FALLBACK=true``.
+"""
 
 from __future__ import annotations
 

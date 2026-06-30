@@ -9,6 +9,11 @@ jobs:
   test:
     name: Test GLTG (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    # CI never depends on real LLM credentials: the evaluator runs against the
+    # deterministic mock provider.
+    env:
+      GLTG_EVALUATOR_MODE: llm
+      GLTG_LLM_PROVIDER: mock
     strategy:
       fail-fast: false
       matrix:
@@ -23,6 +28,9 @@ jobs:
 
       - name: Install
         run: python -m pip install -e ".[dev]"
+
+      - name: Compile sources and tests
+        run: python -m compileall -q src tests
 
       - name: Unit + API tests
         run: pytest -q

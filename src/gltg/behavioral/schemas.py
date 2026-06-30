@@ -355,16 +355,25 @@ class GLTGPersistenceRef(BaseModel):
 class GLTGSimulationResponseV2(BaseModel):
     ok: bool = True
     gltg_run_id: str
+    # Provider-agnostic LLM-assisted evaluator metadata.
+    assessment_schema_version: str = "gltg-assessment-v1"
+    model_provider: str = "qwen"
+    model_name: str = "qwen3.5"
+    evaluation_mode: str = "llm"
     model_version: str = "gltg-hybrid-v0.1.0"
     rule_version: str = "behavior-rules-v0.1.0"
     calibration_version: str = "none"
     quantiles: GLTGQuantiles
-    components: GLTGComponentBreakdown
+    components: GLTGComponentBreakdown = Field(default_factory=GLTGComponentBreakdown)
     risk_decomposition: GLTGRiskDecomposition = Field(default_factory=GLTGRiskDecomposition)
     response_delay_reason_inference: GLTGResponseDelayReasonInference = Field(
         default_factory=GLTGResponseDelayReasonInference
     )
     risk: GLTGRiskOutput
+    # Structured GLTG Assessment Packet (or a normalized projection of it).
+    assessment_packet: dict[str, Any] = Field(default_factory=dict)
+    manual_review_required: bool = False
+    fallback_supplier_required: bool = False
     explanation_json: dict[str, Any] = Field(default_factory=dict)
     warnings: list[GLTGWarningV2] = Field(default_factory=list)
     persistence: GLTGPersistenceRef = Field(default_factory=GLTGPersistenceRef)
