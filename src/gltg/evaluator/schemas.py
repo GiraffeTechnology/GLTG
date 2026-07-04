@@ -153,7 +153,7 @@ class GLTGAssessmentPacket(BaseModel):
 
     assessment_schema_version: str = ASSESSMENT_SCHEMA_VERSION
     model_provider: str = "qwen"
-    model_name: str = "qwen3.5"
+    model_name: str = "qwen3.5:2b"
     model_version: str | None = None
     evaluation_mode: str = "llm"
     case_context: dict[str, Any] = Field(default_factory=dict)

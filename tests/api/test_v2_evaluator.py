@@ -18,7 +18,7 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 def _mock_llm_env(monkeypatch):
     monkeypatch.setenv("GLTG_EVALUATOR_MODE", "llm")
     monkeypatch.setenv("GLTG_LLM_PROVIDER", "mock")
-    monkeypatch.setenv("GLTG_LLM_MODEL", "qwen3.5")
+    monkeypatch.setenv("GLTG_LLM_MODEL", "qwen3.5:2b")
     monkeypatch.delenv("GLTG_MOCK_SCENARIO", raising=False)
 
 
@@ -35,7 +35,7 @@ def test_simulate_returns_provider_metadata_and_packet():
 
     assert body["assessment_schema_version"] == "gltg-assessment-v1"
     assert body["model_provider"] == "mock"
-    assert body["model_name"] == "qwen3.5"
+    assert body["model_name"] == "qwen3.5:2b"
     assert body["evaluation_mode"] == "llm"
 
     assert "quantiles" in body

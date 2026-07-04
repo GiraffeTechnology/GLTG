@@ -14,7 +14,7 @@ def test_default_config_selects_qwen(monkeypatch):
         monkeypatch.delenv(var, raising=False)
     settings = load_settings()
     assert settings.provider == "qwen"
-    assert settings.model == "qwen3.5"
+    assert settings.model == "qwen3.5:2b"
     assert settings.evaluator_mode == "llm"
     provider = get_provider(settings)
     assert provider.provider_name == "qwen"
