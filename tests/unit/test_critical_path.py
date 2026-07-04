@@ -135,3 +135,158 @@ class TestCriticalPathFinder:
         graph = LeadTimeGraph(graph_id="g_empty", order_id="TEST", nodes=[], edges=[])
         critical = self.finder.find(graph)
         assert critical == []
+
+
+def _dur_p90(p90: float) -> DurationEstimate:
+    """Duration whose committable (p90) day count is exactly ``p90``.
+
+    p50/p80 are set below p90 so ``CriticalPathFinder`` derives ``p90`` as the
+    node duration, giving hand-computable working-day offsets.
+    """
+    return DurationEstimate(
+        p50_days=max(p90 * 0.5, 0.5),
+        p80_days=max(p90 * 0.75, 0.5),
+        p90_days=p90,
+        min_days=max(p90 * 0.3, 0.5),
+        max_days=p90 * 1.5,
+        confidence=0.5,
+    )
+
+
+def _node_p90(node_id: str, p90: float) -> LeadTimeNode:
+    return LeadTimeNode(
+        node_id=node_id,
+        node_type=ApparelNodeType.CUTTING,
+        duration_estimate=_dur_p90(p90),
+    )
+
+
+def _edge(from_id: str, to_id: str, dep=DependencyType.FINISH_TO_START, lag: int = 0) -> LeadTimeEdge:
+    return LeadTimeEdge(
+        edge_id=f"e_{from_id}_{to_id}",
+        from_node_id=from_id,
+        to_node_id=to_id,
+        dependency_type=dep,
+        lag_days=lag,
+        is_hard_dependency=True,
+    )
+
+
+class TestCPMSlack:
+    """DEFECT-08: slack-based CPM forward/backward pass acceptance tests.
+
+    Schedules are asserted in whole working-day offsets from the project start,
+    independent of any calendar, so the expected values are hand-computable.
+
+    Fixture graph (durations p90 in working days):
+
+        S(2) --FS--> A(5) --FS--> C(4) --FS--> E(2)   [main chain]
+        S(2) --SS(lag 1)--> B(3) --FS--> C(4)         [lagged parallel branch]
+
+    Forward pass:  S es0 ef2 | A es2 ef7 | B es1 ef4 | C es7 ef11 | E es11 ef13
+    project_end = 13
+    Backward pass: E ls11 lf13 | C ls7 lf11 | A ls2 lf7 | B ls4 lf7 | S ls0 lf2
+    Slack:         S 0 | A 0 | B 3 | C 0 | E 0
+    Critical:      S, A, C, E   (B has slack 3)
+    """
+
+    def setup_method(self):
+        self.finder = CriticalPathFinder()
+
+    def _fixture(self) -> LeadTimeGraph:
+        nodes = [
+            _node_p90("S", 2.0),
+            _node_p90("A", 5.0),
+            _node_p90("B", 3.0),
+            _node_p90("C", 4.0),
+            _node_p90("E", 2.0),
+        ]
+        edges = [
+            _edge("S", "A"),
+            _edge("A", "C"),
+            _edge("C", "E"),
+            _edge("S", "B", dep=DependencyType.START_TO_START, lag=1),
+            _edge("B", "C"),
+        ]
+        return LeadTimeGraph(graph_id="g_cpm", order_id="TEST", nodes=nodes, edges=edges)
+
+    def test_es_ef_ls_lf_exact(self):
+        """Forward/backward pass produces exact hand-computed ES/EF/LS/LF."""
+        sched = self.finder.compute_schedule(self._fixture())
+        expected = {
+            # node: (es, ef, ls, lf)
+            "S": (0, 2, 0, 2),
+            "A": (2, 7, 2, 7),
+            "B": (1, 4, 4, 7),
+            "C": (7, 11, 7, 11),
+            "E": (11, 13, 11, 13),
+        }
+        for nid, (es, ef, ls, lf) in expected.items():
+            assert (sched[nid].es, sched[nid].ef, sched[nid].ls, sched[nid].lf) == (es, ef, ls, lf), nid
+
+    def test_slack_equals_ls_minus_es(self):
+        """Slack == LS - ES == LF - EF for every node; critical nodes have slack 0."""
+        sched = self.finder.compute_schedule(self._fixture())
+        for s in sched.values():
+            assert s.slack == s.ls - s.es
+            assert s.slack == s.lf - s.ef
+        # Known critical nodes: zero slack.
+        for nid in ("S", "A", "C", "E"):
+            assert sched[nid].slack == 0
+            assert sched[nid].is_critical
+        # Known non-critical parallel branch: positive slack.
+        assert sched["B"].slack == 3
+        assert not sched["B"].is_critical
+
+    def test_critical_path_membership_and_order(self):
+        """find() returns exactly the zero-slack nodes, in topological order."""
+        graph = self._fixture()
+        critical = self.finder.find(graph)
+        assert critical == ["S", "A", "C", "E"]
+        # is_critical + slack_days are surfaced on the nodes (additive fields).
+        by_id = {n.node_id: n for n in graph.nodes}
+        assert by_id["B"].is_critical is False
+        assert by_id["B"].slack_days == 3
+        assert by_id["A"].is_critical is True
+        assert by_id["A"].slack_days == 0
+
+    def test_critical_path_shifts_when_branch_grows(self):
+        """Lengthening the parallel branch past the main chain moves the critical path."""
+        nodes = [
+            _node_p90("S", 2.0),
+            _node_p90("A", 5.0),
+            _node_p90("B", 10.0),  # was 3.0; now dominates the A branch
+            _node_p90("C", 4.0),
+            _node_p90("E", 2.0),
+        ]
+        edges = [
+            _edge("S", "A"),
+            _edge("A", "C"),
+            _edge("C", "E"),
+            _edge("S", "B", dep=DependencyType.START_TO_START, lag=1),
+            _edge("B", "C"),
+        ]
+        graph = LeadTimeGraph(graph_id="g_cpm2", order_id="TEST", nodes=nodes, edges=edges)
+        critical = self.finder.find(graph)
+        # Now S -> B -> C -> E is critical and A drops off.
+        assert critical == ["S", "B", "C", "E"]
+        assert "A" not in critical
+
+    def test_start_to_start_lag_shifts_successor_es(self):
+        """A START_TO_START edge shifts the successor ES by exactly its lag."""
+        for lag in (0, 1, 4):
+            nodes = [_node_p90("S", 5.0), _node_p90("T", 3.0)]
+            edges = [_edge("S", "T", dep=DependencyType.START_TO_START, lag=lag)]
+            graph = LeadTimeGraph(graph_id=f"g_ss_{lag}", order_id="TEST", nodes=nodes, edges=edges)
+            sched = self.finder.compute_schedule(graph)
+            # S starts at offset 0; T starts `lag` working days later (not at S's finish).
+            assert sched["S"].es == 0
+            assert sched["T"].es == sched["S"].es + lag
+            # Regression vs the old finish-ignoring trace: ES is the lag, not EF_S.
+            assert sched["T"].es == lag
+
+    def test_deterministic_across_runs(self):
+        """Identical input yields an identical critical path across repeated runs."""
+        runs = [self.finder.find(self._fixture()) for _ in range(5)]
+        assert all(r == runs[0] for r in runs)
+        assert runs[0] == ["S", "A", "C", "E"]

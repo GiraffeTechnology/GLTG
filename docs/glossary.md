@@ -18,7 +18,7 @@ The delivery date the GLTG engine will formally commit to for a given delivery p
 
 ## Critical Path
 
-The sequence of workflow nodes in the lead-time graph that determines the minimum total duration of the order. Any delay on a critical path node directly delays the overall commitable date. Nodes on the critical path have zero or near-zero float (slack). The GLTG engine identifies the critical path using a backward-pass computation over the resolved graph and returns the ordered list of `node_id` values as `packet.critical_path`.
+The sequence of workflow nodes in the lead-time graph that determines the minimum total duration of the order. Any delay on a critical path node directly delays the overall commitable date. Nodes on the critical path have zero float (slack). The GLTG engine identifies the critical path with a slack-based Critical Path Method (CPM): a forward pass computes earliest start/finish (ES/EF) and a backward pass computes latest start/finish (LS/LF) on the committable (p90) timeline, honoring edge `lag_days` and `dependency_type` (finish-to-start, start-to-start, finish-to-finish). Every zero-slack node (`LS - ES == 0`) is critical; the ordered `node_id` list is returned as `packet.critical_path`, per-node slack is exposed as `node.slack_days`, and the full ES/EF/LS/LF schedule is available via `CriticalPathFinder.compute_schedule`.
 
 ---
 

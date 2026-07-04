@@ -126,9 +126,9 @@ The ranker's FASTEST/MOST_RELIABLE labels are then assigned among identical-date
 **Recommended fix:** Delete `next_working_day` (or redirect it to `ensure_working_day`).
 
 ### DEFECT-08 — Critical path is a "latest-finish chain" heuristic, not slack-based CPM
-**Severity:** LOW · **Rule:** LT-06 · **Status:** OPEN
-`CriticalPathFinder.find` (`critical_path.py:228`) back-traces the predecessor with the latest `commitable_finish` and ignores edge `lag_days` in the trace. This yields a plausible bottleneck chain but is not a true zero-slack critical path; with start-to-start/lag edges it can mis-attribute the critical node.
-**Recommended fix:** If CPM rigor is required, compute late-start/late-finish and select zero-slack nodes; otherwise rename to "longest-finish path" in docs to set expectations.
+**Severity:** LOW · **Rule:** LT-06 · **Status:** RESOLVED
+`CriticalPathFinder.find` back-traced the predecessor with the latest `commitable_finish` and ignored edge `lag_days` in the trace. This yielded a plausible bottleneck chain but not a true zero-slack critical path; with start-to-start/lag edges it could mis-attribute the critical node.
+**Resolution:** `CriticalPathFinder` now runs a standard CPM forward/backward pass on the committable (p90) timeline: it computes ES/EF/LS/LF in whole working days, honors `lag_days` and `dependency_type` (FS/SS/FF), and returns every zero-slack node as critical (in topological order). Slack is surfaced additively on `LeadTimeNode.slack_days`; the full schedule is available via `CriticalPathFinder.compute_schedule`. Covered by the CPM acceptance tests in `tests/unit/test_critical_path.py::TestCPMSlack`.
 
 ---
 

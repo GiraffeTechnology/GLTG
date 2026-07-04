@@ -32,4 +32,5 @@ class LeadTimeNode(BaseModel):
     evidence: list[EvidenceItem] = []
     status: NodeStatus = NodeStatus.PENDING
     is_critical: bool = False
+    slack_days: int | None = None  # CPM working-day slack (LS - ES); 0 == critical
     metadata: dict = {}
