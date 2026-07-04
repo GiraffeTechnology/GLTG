@@ -358,7 +358,7 @@ class GLTGSimulationResponseV2(BaseModel):
     # Provider-agnostic LLM-assisted evaluator metadata.
     assessment_schema_version: str = "gltg-assessment-v1"
     model_provider: str = "qwen"
-    model_name: str = "qwen3.5"
+    model_name: str = "qwen3.5:2b"
     evaluation_mode: str = "llm"
     model_version: str = "gltg-hybrid-v0.1.0"
     rule_version: str = "behavior-rules-v0.1.0"

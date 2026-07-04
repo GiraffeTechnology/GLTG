@@ -16,7 +16,7 @@ EvaluatorMode = Literal["llm", "fallback", "mock"]
 
 DEFAULT_EVALUATOR_MODE = "llm"
 DEFAULT_PROVIDER = "qwen"
-DEFAULT_MODEL = "qwen3.5"
+DEFAULT_MODEL = "qwen3.5:2b"
 
 
 def _env_bool(name: str, default: bool) -> bool:
