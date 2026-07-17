@@ -103,10 +103,11 @@ response plus direct DB row inspection.
    (unlocked). Acceptable for a library-style service; noted.
 6. **Structured logging / correlation IDs**: not implemented; uvicorn
    defaults only.
-7. **CI real-HTTP E2E is token-gated** because giraffe-db is private; the
-   acceptance run recorded here was executed against a live giraffe-db
-   (Stage 2A tree) locally. The E2E also depends on giraffe-db Stage 2A
-   (bridge importer + supplier profile) being merged.
+7. **CI real-HTTP E2E is token-gated** because giraffe-db is private. The
+   acceptance run recorded here was re-executed against giraffe-db **main**
+   after Stage 2A (and Stage 2B, synthetic supplier email routing) merged:
+   17/17 checks pass — the previously noted dependency on an unmerged
+   giraffe-db branch is resolved.
 8. **LLM mode** remains experimental: non-deterministic by nature, external
    dependency, and must never be enabled where the canonical boundary
    forbids LLM calculations.
