@@ -2,7 +2,7 @@
 
 > **Status update — provider-agnostic LLM-assisted evaluator.**
 > GLTG's primary v2 model is now a **provider-agnostic LLM-assisted trade
-> lead-time risk evaluator** (Qwen3.5 default, mainstream-LLM compatible via a
+> lead-time risk evaluator** (locally served qwen3.5-9b-int4 as default reference model — not a designated model, no Qwen-ecosystem dependency; mainstream-LLM compatible via a
 > provider adapter interface). See
 > [GLTG_PROVIDER_AGNOSTIC_LLM_ASSISTED_TRADE_RISK_EVALUATOR.md](GLTG_PROVIDER_AGNOSTIC_LLM_ASSISTED_TRADE_RISK_EVALUATOR.md).
 >

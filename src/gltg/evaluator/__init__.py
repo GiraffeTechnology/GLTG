@@ -1,11 +1,13 @@
 """Provider-agnostic LLM-assisted GLTG trade lead-time risk evaluator.
 
-GLTG uses an LLM-assisted evaluator architecture. Qwen3.5 is the default
-bundled/reference evaluator backend, but the evaluator is accessed through a
-provider adapter interface so that OpenAI-compatible, Claude-compatible,
-Gemini-compatible, DeepSeek-compatible, local, and private enterprise models can
-be used without changing GLTG business logic. Deterministic rules are retained
-only as validator, guardrail, and optional fallback logic.
+The deterministic rule engine is GLTG's default evaluation path; this
+LLM-assisted evaluator is explicit opt-in (``GLTG_EVALUATOR_MODE=llm``).
+When enabled, a locally served ``qwen3.5-9b-int4`` is the default reference
+model — a default, not a designated model, with no Qwen-ecosystem
+dependency. The evaluator is accessed through a provider adapter interface
+so OpenAI-compatible, Claude-compatible, Gemini-compatible,
+DeepSeek-compatible, local, and private enterprise models can be used
+without changing GLTG business logic.
 """
 
 from .config import EvaluatorSettings, load_settings

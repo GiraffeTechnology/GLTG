@@ -2,8 +2,9 @@
 
 All settings are read from environment variables at evaluation time so that the
 service can be reconfigured (and tests can monkeypatch) without restarting the
-process. Qwen3.5 is the default *reference* backend, but GLTG stays
-provider-agnostic: nothing in the business logic depends on Qwen specifics.
+process. A locally served ``qwen3.5-9b-int4`` is the default *reference* model
+for llm mode, but GLTG stays provider-agnostic: nothing in the business logic
+depends on Qwen specifics, and no Qwen-ecosystem service is required.
 """
 
 from __future__ import annotations
@@ -19,8 +20,13 @@ EvaluatorMode = Literal["deterministic", "llm", "fallback", "mock"]
 # is strictly explicit opt-in via GLTG_EVALUATOR_MODE=llm. "fallback" is kept
 # as a deprecated alias of the deterministic mode for older deployments.
 DEFAULT_EVALUATOR_MODE = "deterministic"
-DEFAULT_PROVIDER = "qwen"
-DEFAULT_MODEL = "qwen3.5:2b"
+# Default *reference* model for llm mode: a self-hosted int4 Qwen3.5 9B served
+# from a local OpenAI-compatible endpoint. This is a default, not a designated
+# model, and implies no Qwen-ecosystem dependency: any provider/model can be
+# selected via GLTG_LLM_PROVIDER / GLTG_LLM_MODEL without touching business
+# logic. The "local" provider keeps the default free of external services.
+DEFAULT_PROVIDER = "local"
+DEFAULT_MODEL = "qwen3.5-9b-int4"
 
 
 def _env_bool(name: str, default: bool) -> bool:
