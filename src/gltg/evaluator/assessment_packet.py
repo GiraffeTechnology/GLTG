@@ -82,11 +82,6 @@ def project_to_response(
             severity="low",
             message="No source_observation_ids were provided; lineage is incomplete.",
         )]
-    warnings = [*warnings, GLTGWarningV2(
-        code="PERSISTENCE_NOT_CONFIGURED",
-        severity="low",
-        message="GLTG run id is generated, but giraffe-db persistence is not configured in this service build.",
-    )]
 
     explanation = {
         "summary": _summary(packet, settings),
@@ -112,6 +107,7 @@ def project_to_response(
         fallback_supplier_required=fallback_required,
         explanation_json=explanation,
         warnings=warnings,
+        source_observation_ids=list(req.source_observation_ids),
     )
 
 

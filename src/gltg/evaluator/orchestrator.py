@@ -1,13 +1,15 @@
 """GLTG evaluator orchestrator.
 
-Drives the provider-agnostic LLM-assisted evaluation:
+Stage 3 contract: the deterministic rule engine is the **default** evaluation
+path (``GLTG_EVALUATOR_MODE=deterministic``; ``fallback`` is a deprecated
+alias). LLM-assisted evaluation runs only when explicitly selected with
+``GLTG_EVALUATOR_MODE=llm``:
 
     request -> provider adapter -> assessment packet
             -> validator / guardrails -> quantile normalizer
             -> v2 response (+ optional fallback / manual review)
 
-Deterministic rules are never the primary path here -- they are only reached via
-explicit fallback mode or an allowed provider-failure fallback.
+GLTG never calls an LLM for calculations unless the operator opted in.
 """
 
 from __future__ import annotations
@@ -29,8 +31,13 @@ class GLTGEvaluatorOrchestrator:
     def evaluate(self, req: GLTGAssessmentInput) -> GLTGSimulationResponseV2:
         settings = load_settings()
 
-        if settings.is_fallback_mode:
-            return run_fallback(req, settings, provider_unavailable=False)
+        if settings.is_deterministic_mode:
+            return run_fallback(
+                req,
+                settings,
+                provider_unavailable=False,
+                deprecated_fallback_alias=settings.is_fallback_mode,
+            )
 
         # `get_provider` raises on an unknown provider name (clear config error).
         provider = get_provider(settings)
@@ -100,7 +107,10 @@ class GLTGEvaluatorOrchestrator:
             return run_fallback(req, settings, provider_unavailable=True)
 
         packet = manual_review_packet(
-            req, settings, reason=f"evaluator unavailable: {type(exc).__name__}"
+            req,
+            settings,
+            reason=f"evaluator unavailable: {type(exc).__name__}",
+            evaluation_mode="manual_review",
         )
         result = validate_and_repair(packet, req)
         warnings = [

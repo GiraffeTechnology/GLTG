@@ -95,4 +95,4 @@ layer is the stable transport contract consumers integrate against.
 After refactor, each consumer repo is checked so no embedded GLTG engine
 imports/folders remain (only the thin HTTP client, docs, env vars, and tests
 that mock the API). See each consumer PR's "cleanup verification" section and
-`MIGRATION_TEST_REPORT.md`.
+`docs/reports/MIGRATION_TEST_REPORT.md`.

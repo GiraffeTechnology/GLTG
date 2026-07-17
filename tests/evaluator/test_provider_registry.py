@@ -15,7 +15,10 @@ def test_default_config_selects_qwen(monkeypatch):
     settings = load_settings()
     assert settings.provider == "qwen"
     assert settings.model == "qwen3.5:2b"
-    assert settings.evaluator_mode == "llm"
+    # Stage 3: the default mode is deterministic; LLM evaluation (and with it
+    # the qwen reference provider) is strictly explicit opt-in.
+    assert settings.evaluator_mode == "deterministic"
+    assert settings.is_deterministic_mode
     provider = get_provider(settings)
     assert provider.provider_name == "qwen"
 

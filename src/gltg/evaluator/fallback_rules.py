@@ -1,15 +1,13 @@
-"""Deterministic rule-based fallback (demoted from the primary model).
+"""Deterministic rule engine entry point (the Stage 3 default v2 path).
 
-The hard-coded behavioral formulas are NOT the GLTG product model. They are
-retained here as guardrail / fallback logic only, used when:
+Runs the :class:`BehavioralLeadTimeSimulator` and projects its output into
+the v2 response shape. Reached three ways:
 
-* ``GLTG_EVALUATOR_MODE=fallback`` (explicitly selected), or
-* ``GLTG_EVALUATOR_MODE=llm`` and the provider fails and
-  ``GLTG_ALLOW_RULE_FALLBACK=true``.
-
-The fallback wraps the legacy :class:`BehavioralLeadTimeSimulator` and projects
-its output into the provider-agnostic v2 response shape with
-``evaluation_mode="fallback"``.
+* ``GLTG_EVALUATOR_MODE=deterministic`` (default) — ``evaluation_mode="deterministic"``;
+* ``GLTG_EVALUATOR_MODE=fallback`` (deprecated alias) — same engine, labeled
+  ``evaluation_mode="fallback"`` for compatibility with pre-Stage-3 callers;
+* explicit ``GLTG_EVALUATOR_MODE=llm`` whose provider fails while
+  ``GLTG_ALLOW_RULE_FALLBACK=true`` — labeled ``fallback`` with a warning.
 """
 
 from __future__ import annotations
@@ -25,6 +23,7 @@ from .schemas import ASSESSMENT_SCHEMA_VERSION, GLTGAssessmentInput, GLTGAssessm
 _simulator = BehavioralLeadTimeSimulator()
 
 FALLBACK_PROVIDER = "deterministic_fallback"
+DETERMINISTIC_PROVIDER = "deterministic_rules"
 
 
 def run_fallback(
@@ -32,17 +31,20 @@ def run_fallback(
     settings: EvaluatorSettings,
     *,
     provider_unavailable: bool = False,
+    deprecated_fallback_alias: bool = False,
 ) -> GLTGSimulationResponseV2:
     """Run the deterministic simulator and project it to a v2 response."""
 
     response = _simulator.simulate(req)
 
-    packet = _packet_from_response(req, response)
-
+    is_primary = not provider_unavailable and not deprecated_fallback_alias
+    packet = _packet_from_response(
+        req, response, mode="deterministic" if is_primary else "fallback"
+    )
     response.assessment_schema_version = ASSESSMENT_SCHEMA_VERSION
-    response.model_provider = FALLBACK_PROVIDER
+    response.model_provider = DETERMINISTIC_PROVIDER if is_primary else FALLBACK_PROVIDER
     response.model_name = response.rule_version
-    response.evaluation_mode = "fallback"
+    response.evaluation_mode = "deterministic" if is_primary else "fallback"
     response.assessment_packet = packet.model_dump()
     response.manual_review_required = response.risk.manual_review_required
     response.fallback_supplier_required = response.risk.fallback_supplier_required
@@ -55,7 +57,7 @@ def run_fallback(
                 message="LLM provider unavailable; deterministic rule fallback used.",
             )
         )
-    else:
+    elif deprecated_fallback_alias:
         response.warnings.append(
             GLTGWarningV2(
                 code="RULE_FALLBACK_MODE",
@@ -67,14 +69,15 @@ def run_fallback(
 
 
 def _packet_from_response(
-    req: GLTGAssessmentInput, response: GLTGSimulationResponseV2
+    req: GLTGAssessmentInput, response: GLTGSimulationResponseV2, mode: str = "fallback"
 ) -> GLTGAssessmentPacket:
     material = req.trade_processing_factors.material
     evidence = list(req.source_observation_ids)
+    provider = DETERMINISTIC_PROVIDER if mode == "deterministic" else FALLBACK_PROVIDER
     packet = GLTGAssessmentPacket(
-        model_provider=FALLBACK_PROVIDER,
+        model_provider=provider,
         model_name=response.rule_version,
-        evaluation_mode="fallback",
+        evaluation_mode=mode,
         case_context=req.case_context.model_dump(),
         evidence_refs=evidence,
     )
@@ -102,9 +105,9 @@ def _packet_from_response(
 
     packet.manual_review.required = response.risk.manual_review_required
     packet.fallback_supplier.required = response.risk.fallback_supplier_required
-    packet.audit.model_provider = FALLBACK_PROVIDER
+    packet.audit.model_provider = provider
     packet.audit.model_name = response.rule_version
-    packet.audit.evaluation_mode = "fallback"
+    packet.audit.evaluation_mode = mode
     return packet
 
 

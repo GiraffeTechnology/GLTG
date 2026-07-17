@@ -12,9 +12,13 @@ import os
 from dataclasses import dataclass
 from typing import Literal
 
-EvaluatorMode = Literal["llm", "fallback", "mock"]
+EvaluatorMode = Literal["deterministic", "llm", "fallback", "mock"]
 
-DEFAULT_EVALUATOR_MODE = "llm"
+# Stage 3 canonical-boundary decision: GLTG must not silently call an LLM for
+# calculations. The deterministic rule engine is the default; LLM assistance
+# is strictly explicit opt-in via GLTG_EVALUATOR_MODE=llm. "fallback" is kept
+# as a deprecated alias of the deterministic mode for older deployments.
+DEFAULT_EVALUATOR_MODE = "deterministic"
 DEFAULT_PROVIDER = "qwen"
 DEFAULT_MODEL = "qwen3.5:2b"
 
@@ -65,7 +69,12 @@ class EvaluatorSettings:
     mock_scenario: str = "valid"
 
     @property
+    def is_deterministic_mode(self) -> bool:
+        return self.evaluator_mode in {"deterministic", "fallback"}
+
+    @property
     def is_fallback_mode(self) -> bool:
+        # Deprecated alias kept for compatibility with pre-Stage-3 callers.
         return self.evaluator_mode == "fallback"
 
 
