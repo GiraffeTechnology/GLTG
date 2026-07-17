@@ -49,6 +49,20 @@ Required v2 response contract check (pre-Stage-3):
 
 - `/ready` endpoint: **absent** (only `/health`, which conflates liveness
   and readiness by implication).
+
+> **Post-review addendum (PR #8 fixes).** The Stage 3 changes introduced a
+> runtime import of `httpx` (giraffe-db client) into `gltg.api.main` while
+> `httpx` lived only in the dev extra — the Docker image (`pip install
+> ".[api]"`) therefore failed to import the app before `/health` could bind,
+> which is exactly what the CI Docker startup smoke caught. Fixed by
+> declaring `httpx>=0.27` in the `api` extra (narrowest owner: the API
+> runtime imports it; the core library does not). A new guard,
+> `scripts/validate_api_only_runtime.py`, builds a clean venv with **only**
+> `.[api]`, imports `gltg.api.main` + the giraffe-db client from that venv,
+> boots uvicorn outside the source tree, and checks `/health`, `/ready`, and
+> a deterministic `/v2/lead-time/simulate` over real HTTP; it runs in CI on
+> Python 3.11/3.12/3.13. The Docker smoke itself was not weakened and the
+> non-root assertion remains.
 - Docker: runs as **root**; base `python:3.11-slim`; honors
   `GLTG_HOST/GLTG_PORT`.
 - Dependencies: floor-pinned only (`>=`); `uv.lock` exists but CI installs

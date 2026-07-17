@@ -77,7 +77,26 @@ follow-up minimal giraffe-db PR can add the GET route.
 - Optional persistence (`GLTG_PERSIST_RUNS=true` + configured client):
   POST the run to `/api/data/gltg-simulation-runs`; `persistence.status` ∈
   `persisted | skipped | failed | unavailable` and never claims success it
-  didn't observe.
+  didn't observe. Post-review hardening: every persisted run stores the
+  **complete evaluated request** (`base_input_json.request_json`) plus a
+  SHA-1 `input_fingerprint` of it; reforecasts persist the **updated**
+  request (events applied) — never the pre-event original — together with
+  `reforecast_meta` (`reforecast`, `applied_events`, `unapplied_events`,
+  `triggering_observation_ids`, `previous_run_id`), so stored inputs replay
+  to the stored output (`tests/stage3/test_reforecast_persistence.py`).
+- Behavior-evidence degradation semantics (post-review): when evidence is
+  requested and the supplier read succeeds but the behavior summary is
+  unusable — endpoint 404, malformed payload, missing required fields
+  (`observation_count`), empty summary, or the behavior endpoint being
+  unreachable — GLTG emits `MISSING_BEHAVIOR_EVIDENCE` **and** applies a
+  bounded confidence penalty (0.1 per category, total capped at 0.2, final
+  confidence clipped to [0,1]), records
+  `explanation_json.evidence.behavior_evidence_status` ∈
+  `ok | no_observations | endpoint_not_found | malformed_payload |
+  endpoint_unavailable`, and never invents behavior values or observation
+  IDs. Auth failures on either endpoint still fail closed (502
+  `EVIDENCE_AUTH_FAILED`), and supplier-read unavailability remains 503
+  `DB_UNAVAILABLE` (`tests/stage3/test_behavior_evidence_penalty.py`).
 - Real-HTTP proof: `scripts/validate_gltg_giraffe_db_e2e.py` (fresh
   giraffe-db DB → migrations → synthetic supplier import → live giraffe-db
   uvicorn → live GLTG uvicorn → authenticated evidence retrieval → v2

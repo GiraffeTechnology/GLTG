@@ -69,6 +69,38 @@ response plus direct DB row inspection.
 | 7 | Reforecast after capacity/logistics change | applied events, previous-vs-new quantiles, changed components (live E2E) |
 | 8 | Wrong tenant | evidence access denied; explicit warning + manual review (live E2E) |
 
+## Post-review fixes (PR #8 blockers, 2026-07-17)
+
+All three Codex review blockers were fixed and regression-tested:
+
+1. **P1 — `httpx` in the API runtime** (`pyproject.toml` `api` extra): the
+   Docker image (`pip install ".[api]"`) previously failed to import
+   `gltg.api.main` (giraffe-db client imports `httpx`), which is what broke
+   the Docker startup smoke. New guard
+   `scripts/validate_api_only_runtime.py` (clean venv, `.[api]` only →
+   import + live `/health`, `/ready`, deterministic v2) runs in CI on
+   3.11/3.12/3.13 and passes; the Docker smoke was not weakened, non-root
+   requirement retained. (This validation environment has no Docker daemon;
+   the CI Docker job performs the authoritative build + smoke.)
+2. **P2 — reforecast persists the updated request**: `run_reforecast` now
+   persists `updated_req` with the full `request_json`, a SHA-1
+   `input_fingerprint` of the actually-evaluated request, and
+   `reforecast_meta` (applied/unapplied events, triggering observation IDs,
+   `previous_run_id`). Tests prove the persisted inputs replay to the
+   persisted quantiles and the original request is never mutated
+   (`tests/stage3/test_reforecast_persistence.py`, 6 tests).
+3. **P2 — bounded confidence penalty for unusable behavior evidence**: 404,
+   malformed payload, missing required fields, empty summary, and
+   behavior-endpoint-unavailable (supplier read OK) all now apply a 0.1
+   penalty (total capped at 0.2, confidence clipped to [0,1]) with
+   `MISSING_BEHAVIOR_EVIDENCE` and a machine-readable
+   `behavior_evidence_status`; auth failures still fail closed
+   (`tests/stage3/test_behavior_evidence_penalty.py`, 9 tests).
+
+Post-fix results: suite **322 passed** five consecutive runs; API-only
+runtime check PASS; determinism/edge/supplier scripts PASS; real-HTTP E2E
+vs giraffe-db main (Stage 2A + 2B) **17/17 PASS**.
+
 ## Test evidence
 
 - Full suite, five consecutive runs on the final tree (`python -m pytest -q`):
