@@ -15,6 +15,8 @@ Keeps the HTTP routes thin and owns the three Stage 3 behaviors:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from typing import Any
 
@@ -56,6 +58,13 @@ def _warn(code: str, severity: str, message: str) -> GLTGWarningV2:
 # --------------------------------------------------------------------------- #
 # Evidence resolution
 # --------------------------------------------------------------------------- #
+# Bounded confidence penalties for requested-but-unusable evidence. The total
+# applied penalty is capped so degraded evidence can never zero out an
+# otherwise healthy confidence score on its own.
+BEHAVIOR_EVIDENCE_PENALTY = 0.1
+MAX_EVIDENCE_CONFIDENCE_PENALTY = 0.2
+
+
 class ResolvedEvidence:
     def __init__(self) -> None:
         self.warnings: list[GLTGWarningV2] = []
@@ -133,21 +142,29 @@ def resolve_evidence(
         ))
     meta["supplier_is_synthetic"] = record.get("is_synthetic")
 
-    # Behavior summary — 404/malformed degrade to explicit warnings.
+    # Behavior summary. Auth failures still fail closed; every other way the
+    # behavior evidence can be unusable (endpoint 404, malformed payload,
+    # missing required fields, empty summary, or the endpoint being
+    # unreachable while the supplier read succeeded) degrades explicitly:
+    # stable warning code, a bounded confidence penalty, and a
+    # machine-readable status — never invented behavior values.
     summary: dict[str, Any] | None = None
+    behavior_status = "ok"
     try:
         summary = client.get_supplier_behavior_summary(supplier_id, req.tenant_id)
     except GiraffeDBAuthError as exc:
         raise EvidenceAuthError(str(exc)) from exc
-    except GiraffeDBUnavailable as exc:
-        raise EvidenceUnavailableError(str(exc)) from exc
-    except (GiraffeDBNotFound, GiraffeDBMalformedResponse) as exc:
-        resolved.warnings.append(_warn(
-            "MISSING_BEHAVIOR_EVIDENCE",
-            "medium",
-            f"Behavior summary unavailable ({type(exc).__name__}); "
-            "no behavior was invented.",
-        ))
+    except GiraffeDBUnavailable:
+        behavior_status = "endpoint_unavailable"
+    except GiraffeDBNotFound:
+        behavior_status = "endpoint_not_found"
+    except GiraffeDBMalformedResponse:
+        behavior_status = "malformed_payload"
+
+    if summary is not None and not isinstance(summary.get("observation_count"), (int, float)):
+        # Required field missing/invalid: the payload cannot be trusted.
+        behavior_status = "malformed_payload"
+        summary = None
 
     if summary is not None:
         meta["retrieved"].append("behavior_summary")
@@ -176,13 +193,17 @@ def resolve_evidence(
                 delay["response_delay_ratio"]
             )
         if observation_count == 0:
-            resolved.confidence_penalty += 0.1
-            resolved.warnings.append(_warn(
-                "MISSING_BEHAVIOR_EVIDENCE",
-                "medium",
-                "giraffe-db holds no behavior observations for this supplier; "
-                "confidence reduced, no behavior invented.",
-            ))
+            behavior_status = "no_observations"
+
+    meta["behavior_evidence_status"] = behavior_status
+    if behavior_status != "ok":
+        resolved.confidence_penalty += BEHAVIOR_EVIDENCE_PENALTY
+        resolved.warnings.append(_warn(
+            "MISSING_BEHAVIOR_EVIDENCE",
+            "medium",
+            f"Behavior evidence unusable ({behavior_status}); "
+            "confidence reduced, no behavior invented.",
+        ))
 
     if resolved.extra_observation_ids:
         merged = list(req.source_observation_ids)
@@ -200,12 +221,18 @@ def _apply_evidence_to_response(
     if resolved.explanation:
         response.explanation_json.update(resolved.explanation)
     if resolved.confidence_penalty and response.risk.confidence_score is not None:
-        adjusted = max(0.0, round(response.risk.confidence_score - resolved.confidence_penalty, 3))
+        penalty = round(min(resolved.confidence_penalty, MAX_EVIDENCE_CONFIDENCE_PENALTY), 3)
+        adjusted = max(0.0, round(response.risk.confidence_score - penalty, 3))
+        reason = (
+            resolved.explanation.get("evidence", {}).get("behavior_evidence_status")
+            or resolved.explanation.get("evidence", {}).get("status")
+            or "missing_evidence"
+        )
         response.explanation_json.setdefault("adjustments", []).append({
             "feature": "missing_evidence",
-            "value": resolved.confidence_penalty,
-            "adjustment": f"-{resolved.confidence_penalty} confidence_score",
-            "reason": "Requested giraffe-db evidence was missing; confidence reduced.",
+            "value": penalty,
+            "adjustment": f"-{penalty} confidence_score",
+            "reason": f"Requested giraffe-db evidence was unusable ({reason}); confidence reduced.",
         })
         response.risk.confidence_score = adjusted
     if resolved.force_manual_review:
@@ -220,12 +247,27 @@ def _persist_enabled() -> bool:
     return os.environ.get("GLTG_PERSIST_RUNS", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _request_fingerprint(req: GLTGSimulationRequestV2) -> str:
+    """SHA-1 over the canonical JSON of the request that was actually evaluated."""
+    canonical = json.dumps(
+        req.model_dump(mode="json"), sort_keys=True, separators=(",", ":")
+    )
+    return hashlib.sha1(canonical.encode("utf-8")).hexdigest()
+
+
 def persist_run(
     req: GLTGSimulationRequestV2,
     response: GLTGSimulationResponseV2,
     client: GiraffeDBClient | None,
+    *,
+    reforecast_meta: dict[str, Any] | None = None,
 ) -> None:
-    """Attach a truthful persistence outcome to the response."""
+    """Attach a truthful persistence outcome to the response.
+
+    ``req`` must be the request the response was actually computed from —
+    for reforecasts that is the *updated* request (events applied), so the
+    persisted inputs reproduce the persisted output.
+    """
 
     if not _persist_enabled():
         response.persistence = GLTGPersistenceRef(
@@ -262,6 +304,11 @@ def persist_run(
             "model_version": response.model_version,
             "rule_version": response.rule_version,
             "calibration_version": response.calibration_version,
+            # Replay guarantee: the complete evaluated request and its
+            # fingerprint (for reforecasts this is the updated request).
+            "request_json": req.model_dump(mode="json"),
+            "input_fingerprint": _request_fingerprint(req),
+            **({"reforecast_meta": reforecast_meta} if reforecast_meta else {}),
         },
         "behavior_input_json": req.behavior_features.model_dump(mode="json", exclude_none=True),
         "output_json": {
@@ -447,7 +494,20 @@ def run_reforecast(req: GLTGReforecastRequestV2) -> GLTGReforecastResponseV2:
         "applied_event_types": [str(event.get("event_type", "")) for event in applied],
         "changed_components": changed_components,
     }
-    persist_run(req, response, client)
+    # Persist the UPDATED request (events applied) so the stored inputs
+    # reproduce the stored output; keep the event audit trail alongside.
+    persist_run(
+        updated_req,
+        response,
+        client,
+        reforecast_meta={
+            "reforecast": True,
+            "applied_events": applied,
+            "unapplied_events": unapplied,
+            "triggering_observation_ids": triggering,
+            "previous_run_id": previous.gltg_run_id,
+        },
+    )
     return response
 
 
