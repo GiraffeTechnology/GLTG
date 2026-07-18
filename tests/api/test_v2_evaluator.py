@@ -78,10 +78,13 @@ def test_paths_enumerate_ranks_with_evaluator():
     assert body["paths"][0]["supplier_id"] == "FAST"
 
 
-def test_reforecast_echoes_events():
+def test_reforecast_discloses_previous_quantiles_and_unapplied_events():
     payload = _request()
     payload["events"] = [{"event_type": "supplier_delay", "delay_days": 3}]
     body = client.post("/v2/reforecast", json=payload).json()
     assert body["ok"] is True
-    assert body["applied_events"] == payload["events"]
+    # Unknown event types are disclosed, never silently echoed as applied.
+    assert body["applied_events"] == []
+    assert body["unapplied_events"] == payload["events"]
+    assert body["previous_quantiles"] is not None
     assert body["evaluation_mode"] == "llm"

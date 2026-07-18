@@ -264,6 +264,18 @@ class GLTGSimulationConstraintsV2(BaseModel):
     max_acceptable_risk_level: str = "medium"
 
 
+class GLTGEvidenceRequestV2(BaseModel):
+    """Explicit opt-in for GLTG to retrieve evidence from giraffe-db.
+
+    When ``use_giraffe_db`` is true, GLTG fetches the supplier record and
+    behavior summary for ``supplier.supplier_id`` under the request's
+    ``tenant_id``. GLTG never fabricates evidence: retrieval failures surface
+    as explicit warnings/errors, never as guessed local values.
+    """
+
+    use_giraffe_db: bool = False
+
+
 class GLTGSimulationRequestV2(BaseModel):
     request_id: str
     tenant_id: str = "tenant_default"
@@ -276,6 +288,7 @@ class GLTGSimulationRequestV2(BaseModel):
     behavior_features: GLTGBehaviorFeatures = Field(default_factory=GLTGBehaviorFeatures)
     trade_processing_factors: GLTGTradeProcessingFactors = Field(default_factory=GLTGTradeProcessingFactors)
     source_observation_ids: list[str] = Field(default_factory=list)
+    evidence: GLTGEvidenceRequestV2 = Field(default_factory=GLTGEvidenceRequestV2)
     constraints: GLTGSimulationConstraintsV2 = Field(default_factory=GLTGSimulationConstraintsV2)
 
 
@@ -348,18 +361,31 @@ class GLTGWarningV2(BaseModel):
 
 
 class GLTGPersistenceRef(BaseModel):
+    """Truthful persistence outcome for a run.
+
+    status values:
+      * ``unavailable`` — giraffe-db persistence is not configured;
+      * ``skipped``     — configured but explicitly disabled for this run;
+      * ``persisted``   — giraffe-db accepted the run (id in giraffe_db_run_id);
+      * ``failed``      — a persistence attempt was made and failed.
+    """
+
+    status: str = "unavailable"
     persisted_to_giraffe_db: bool = False
+    giraffe_db_run_id: str | None = None
     gltg_behavior_input_id: str | None = None
+    detail: str | None = None
 
 
 class GLTGSimulationResponseV2(BaseModel):
     ok: bool = True
     gltg_run_id: str
-    # Provider-agnostic LLM-assisted evaluator metadata.
+    # Evaluator metadata. Deterministic rules are the default engine; the
+    # provider fields identify the LLM only in explicit opt-in llm mode.
     assessment_schema_version: str = "gltg-assessment-v1"
-    model_provider: str = "qwen"
-    model_name: str = "qwen3.5:2b"
-    evaluation_mode: str = "llm"
+    model_provider: str = "deterministic_rules"
+    model_name: str = "behavior-rules-v0.1.0"
+    evaluation_mode: str = "deterministic"
     model_version: str = "gltg-hybrid-v0.1.0"
     rule_version: str = "behavior-rules-v0.1.0"
     calibration_version: str = "none"
@@ -377,6 +403,9 @@ class GLTGSimulationResponseV2(BaseModel):
     explanation_json: dict[str, Any] = Field(default_factory=dict)
     warnings: list[GLTGWarningV2] = Field(default_factory=list)
     persistence: GLTGPersistenceRef = Field(default_factory=GLTGPersistenceRef)
+    # Lineage: IDs are echoed from the request and/or returned by giraffe-db
+    # evidence retrieval; GLTG never invents observation IDs.
+    source_observation_ids: list[str] = Field(default_factory=list)
 
 
 class GLTGPathV2(BaseModel):
@@ -402,5 +431,16 @@ class GLTGReforecastRequestV2(GLTGSimulationRequestV2):
     events: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class GLTGReforecastDeltaV2(BaseModel):
+    p50_days: float = 0.0
+    p80_days: float = 0.0
+    p90_days: float = 0.0
+
+
 class GLTGReforecastResponseV2(GLTGSimulationResponseV2):
     applied_events: list[dict[str, Any]] = Field(default_factory=list)
+    unapplied_events: list[dict[str, Any]] = Field(default_factory=list)
+    previous_quantiles: GLTGQuantiles | None = None
+    delta: GLTGReforecastDeltaV2 | None = None
+    changed_components: dict[str, float] = Field(default_factory=dict)
+    triggering_observation_ids: list[str] = Field(default_factory=list)

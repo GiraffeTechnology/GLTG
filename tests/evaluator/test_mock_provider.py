@@ -42,7 +42,8 @@ def test_timeout_triggers_manual_review_without_fallback(make_request, monkeypat
     monkeypatch.setenv("GLTG_MOCK_SCENARIO", "timeout")
     res = evaluate(make_request())
     assert res.manual_review_required is True
-    assert res.evaluation_mode == "llm"
+    # The stub is honestly labeled: no model ran, so the mode is not "llm".
+    assert res.evaluation_mode == "manual_review"
     assert "EVALUATOR_UNAVAILABLE" in _codes(res)
 
 

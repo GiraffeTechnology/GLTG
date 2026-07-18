@@ -16,6 +16,9 @@ dependencies = [
 api = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
+    # gltg.api.main imports the giraffe-db evidence client at startup, which
+    # needs httpx at runtime — not only in dev environments.
+    "httpx>=0.27",
 ]
 dev = [
     "pytest>=7.0",

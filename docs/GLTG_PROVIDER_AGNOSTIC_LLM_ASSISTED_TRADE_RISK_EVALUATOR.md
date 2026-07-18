@@ -2,8 +2,12 @@
 
 GLTG uses an LLM-assisted evaluator architecture.
 
-Qwen3.5 is the default bundled/reference evaluator model for the first
-implementation, but GLTG remains model-provider agnostic. The evaluator is
+The LLM-assisted evaluator is explicit opt-in (`GLTG_EVALUATOR_MODE=llm`);
+GLTG's default evaluation path is the deterministic rule engine. When llm
+mode is enabled, a locally served `qwen3.5-9b-int4` is the default
+*reference* model — a default, not a designated model, with no
+Qwen-ecosystem dependency — and GLTG remains model-provider agnostic. The
+evaluator is
 accessed through a provider adapter interface so that OpenAI-compatible models,
 Claude-compatible providers, Gemini-compatible providers, DeepSeek-compatible
 providers, local models, and private enterprise models can be used without
@@ -32,12 +36,12 @@ GLTG HTTP API  (POST /v2/lead-time/simulate)
 GLTG Evaluator Orchestrator        src/gltg/evaluator/orchestrator.py
         ↓
 LLM Provider Adapter Interface     src/gltg/evaluator/providers/base.py
-        ├── qwen (default: qwen3.5)
+        ├── local / private enterprise (default; reference model qwen3.5-9b-int4)
         ├── openai_compatible
+        ├── qwen (DashScope cloud)
         ├── anthropic / claude-compatible
         ├── gemini-compatible
         ├── deepseek-compatible
-        ├── local / private enterprise
         └── mock (CI / deterministic tests)
         ↓
 Structured GLTG Assessment Packet  src/gltg/evaluator/schemas.py
@@ -70,9 +74,9 @@ GLTG v2 response (+ optional giraffe-db persistence)
 See [`.env.example`](../.env.example). Defaults:
 
 ```text
-GLTG_EVALUATOR_MODE=llm
-GLTG_LLM_PROVIDER=qwen
-GLTG_LLM_MODEL=qwen3.5
+GLTG_EVALUATOR_MODE=deterministic   # llm is explicit opt-in
+GLTG_LLM_PROVIDER=local
+GLTG_LLM_MODEL=qwen3.5-9b-int4
 GLTG_LLM_TEMPERATURE=0
 GLTG_ALLOW_RULE_FALLBACK=false
 ```

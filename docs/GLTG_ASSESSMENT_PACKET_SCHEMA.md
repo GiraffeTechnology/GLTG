@@ -8,8 +8,8 @@ packet. Defined in `src/gltg/evaluator/schemas.py`.
 ```json
 {
   "assessment_schema_version": "gltg-assessment-v1",
-  "model_provider": "qwen",
-  "model_name": "qwen3.5",
+  "model_provider": "local",
+  "model_name": "qwen3.5-9b-int4",
   "model_version": null,
   "evaluation_mode": "llm",
   "case_context": {},

@@ -129,12 +129,21 @@ def test_v2_paths_enumerate_ranks_multiple_simulations():
     assert body["paths"][0]["supplier_id"] == "FAST"
 
 
-def test_v2_reforecast_echoes_events_and_returns_simulation():
+def test_v2_reforecast_applies_events_and_discloses_delta():
     payload = _fixture("gltg_v2_simulation_request.json")
-    payload["events"] = [{"event_type": "supplier_delay", "delay_days": 3}]
+    payload["events"] = [
+        {"event_type": "supplier_response_delay", "response_delay_ratio": 3.5},
+        {"event_type": "supplier_delay", "delay_days": 3},  # unknown type
+    ]
     body = client.post("/v2/reforecast", json=payload).json()
     assert body["ok"] is True
-    assert body["applied_events"] == payload["events"]
+    assert body["applied_events"] == [payload["events"][0]]
+    assert body["unapplied_events"] == [payload["events"][1]]
+    assert any(w["code"] == "UNAPPLIED_REFORECAST_EVENT" for w in body["warnings"])
+    assert body["previous_quantiles"] is not None
+    # Worsening delay evidence must not improve the forecast.
+    assert body["delta"]["p50_days"] >= 0
+    assert body["quantiles"]["p50_days"] >= body["previous_quantiles"]["p50_days"]
 
 
 def test_trade_factor_fast_response_material_in_stock_has_low_material_risk():

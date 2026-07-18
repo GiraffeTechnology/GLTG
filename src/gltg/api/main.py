@@ -11,6 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from ..errors import GLTGError
+from ..services.v2_pipeline import EvidenceAuthError, EvidenceUnavailableError
 from ..version import __version__
 from .routes import router
 
@@ -33,6 +34,25 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=422,
             content={"error": str(exc), "code": type(exc).__name__},
+        )
+
+    # giraffe-db evidence failures are explicit, never silent: an unreachable
+    # evidence service is a 503 DB_UNAVAILABLE; rejected service auth/tenant
+    # fails closed as a 502 EVIDENCE_AUTH_FAILED.
+    @app.exception_handler(EvidenceUnavailableError)
+    async def _evidence_unavailable_handler(
+        request: Request, exc: EvidenceUnavailableError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=503,
+            content={"error": str(exc), "code": "DB_UNAVAILABLE"},
+        )
+
+    @app.exception_handler(EvidenceAuthError)
+    async def _evidence_auth_handler(request: Request, exc: EvidenceAuthError) -> JSONResponse:
+        return JSONResponse(
+            status_code=502,
+            content={"error": str(exc), "code": "EVIDENCE_AUTH_FAILED"},
         )
 
     # Request-validation failures (DEFECT-API-01): FastAPI's default

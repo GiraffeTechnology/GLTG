@@ -1,10 +1,12 @@
-"""Qwen default reference adapter.
+"""Qwen cloud (DashScope) adapter.
 
-Qwen3.5 is the default *bundled/reference* evaluator backend for the first GLTG
-implementation. Giraffe is NOT a Qwen ecosystem product: this adapter is just
-one implementation of the provider-neutral interface. Qwen exposes an
-OpenAI-compatible endpoint (DashScope compatible mode), so the default adapter
-reuses the OpenAI-compatible transport with Qwen defaults.
+One implementation of the provider-neutral interface for callers who use
+Qwen's hosted DashScope endpoint. Giraffe is NOT a Qwen ecosystem product,
+and this adapter is not the default: the default reference model
+(``qwen3.5-9b-int4``) is served through the ``local`` provider from a
+self-hosted OpenAI-compatible endpoint, with no external ecosystem
+dependency. Qwen exposes an OpenAI-compatible endpoint (DashScope compatible
+mode), so this adapter reuses the OpenAI-compatible transport.
 """
 
 from __future__ import annotations

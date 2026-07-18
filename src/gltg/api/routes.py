@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter
 
 from ..behavioral.schemas import (
@@ -13,9 +15,11 @@ from ..behavioral.schemas import (
     GLTGSimulationRequestV2,
     GLTGSimulationResponseV2,
 )
-from ..evaluator import orchestrator as gltg_evaluator
+from ..evaluator.config import load_settings
+from ..integrations.giraffe_db_client import client_from_env
 from ..version import __version__
 from ..services import engine_adapter
+from ..services.v2_pipeline import run_reforecast, run_simulation
 from .schemas import (
     HealthResponse,
     LeadTimeEstimateRequest,
@@ -38,6 +42,29 @@ def health() -> HealthResponse:
 @router.get("/version", response_model=VersionResponse, tags=["meta"])
 def version() -> VersionResponse:
     return VersionResponse(service="gltg", version=__version__, api_version="v1")
+
+
+@router.get("/ready", tags=["meta"])
+def ready() -> dict:
+    """Dependency readiness without leaking secrets.
+
+    ``/health`` means the process is alive; ``/ready`` reports whether the
+    configured evaluation mode and optional giraffe-db dependency are usable.
+    """
+    settings = load_settings()
+    client = client_from_env()
+    giraffe_db_status = "not_configured"
+    if client is not None:
+        giraffe_db_status = "ok" if client.healthz() else "unreachable"
+    evaluator_ready = settings.is_deterministic_mode or settings.evaluator_mode == "llm"
+    ready_flag = evaluator_ready and giraffe_db_status != "unreachable"
+    return {
+        "ready": ready_flag,
+        "evaluator_mode": settings.evaluator_mode,
+        "giraffe_db": giraffe_db_status,
+        "persistence_enabled": os.environ.get("GLTG_PERSIST_RUNS", "").strip().lower()
+        in {"1", "true", "yes", "on"},
+    }
 
 
 @router.post(
@@ -73,7 +100,7 @@ def reforecast(req: ReforecastRequest) -> ReforecastResponse:
     tags=["lead-time-v2"],
 )
 def simulate_lead_time_v2(req: GLTGSimulationRequestV2) -> GLTGSimulationResponseV2:
-    return gltg_evaluator.evaluate(req)
+    return run_simulation(req)
 
 
 @router.post(
@@ -85,7 +112,7 @@ def enumerate_paths_v2(req: GLTGPathsEnumerateRequestV2) -> GLTGPathsEnumerateRe
     paths: list[GLTGPathV2] = []
     warnings = []
     for sim_req in req.simulations:
-        sim = gltg_evaluator.evaluate(sim_req)
+        sim = run_simulation(sim_req, persist=False)
         paths.append(
             GLTGPathV2(
                 path_id=f"v2:{sim_req.supplier.supplier_id or sim_req.request_id}",
@@ -109,5 +136,4 @@ def enumerate_paths_v2(req: GLTGPathsEnumerateRequestV2) -> GLTGPathsEnumerateRe
     tags=["reforecast-v2"],
 )
 def reforecast_v2(req: GLTGReforecastRequestV2) -> GLTGReforecastResponseV2:
-    sim = gltg_evaluator.evaluate(req)
-    return GLTGReforecastResponseV2(**sim.model_dump(), applied_events=req.events)
+    return run_reforecast(req)

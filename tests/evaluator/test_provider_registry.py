@@ -9,15 +9,21 @@ from gltg.evaluator.provider_registry import SUPPORTED_PROVIDERS, get_provider
 from gltg.evaluator.providers.base import ProviderError
 
 
-def test_default_config_selects_qwen(monkeypatch):
+def test_default_config_selects_local_reference_model(monkeypatch):
     for var in ("GLTG_EVALUATOR_MODE", "GLTG_LLM_PROVIDER", "GLTG_LLM_MODEL"):
         monkeypatch.delenv(var, raising=False)
     settings = load_settings()
-    assert settings.provider == "qwen"
-    assert settings.model == "qwen3.5:2b"
-    assert settings.evaluator_mode == "llm"
+    # qwen3.5-9b-int4 is the default *reference* model (not a designated
+    # model), served through the local OpenAI-compatible provider so the
+    # default carries no Qwen-ecosystem or external-service dependency.
+    assert settings.provider == "local"
+    assert settings.model == "qwen3.5-9b-int4"
+    # Stage 3: the default mode is deterministic; LLM evaluation is strictly
+    # explicit opt-in.
+    assert settings.evaluator_mode == "deterministic"
+    assert settings.is_deterministic_mode
     provider = get_provider(settings)
-    assert provider.provider_name == "qwen"
+    assert provider.provider_name == "local"
 
 
 def test_openai_compatible_selected(monkeypatch):

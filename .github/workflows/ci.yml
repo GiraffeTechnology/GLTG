@@ -9,11 +9,9 @@ jobs:
   test:
     name: Test GLTG (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
-    # CI never depends on real LLM credentials: the evaluator runs against the
-    # deterministic mock provider.
-    env:
-      GLTG_EVALUATOR_MODE: llm
-      GLTG_LLM_PROVIDER: mock
+    # No env pinning: CI must exercise the shipped defaults (deterministic
+    # evaluator, no LLM calls). Evaluator tests that need llm mode set it
+    # explicitly with the deterministic mock provider.
     strategy:
       fail-fast: false
       matrix:
@@ -29,11 +27,17 @@ jobs:
       - name: Install
         run: python -m pip install -e ".[dev]"
 
-      - name: Compile sources and tests
-        run: python -m compileall -q src tests
+      - name: Compile sources, tests, and scripts
+        run: python -m compileall -q src tests scripts
 
       - name: Unit + API tests
         run: pytest -q
+
+      # Guards the Docker runtime contract: a clean venv with ONLY .[api]
+      # must be able to import gltg.api.main (incl. the giraffe-db client),
+      # boot uvicorn, and answer /health, /ready and a deterministic v2 call.
+      - name: API-only runtime check (clean venv, .[api] only)
+        run: python scripts/validate_api_only_runtime.py
 
       - name: Unified giraffe-db data-ID contract scan
         run: python scripts/check_unified_data_ids.py --repo .
@@ -95,3 +99,97 @@ jobs:
                  "production_days":14,"qc_days":2,"logistics_days":7,"confidence":0.8}],
                  "events":[{"supplier_id":"M1","production_days_delta":6}]}' \
             | tee /dev/stderr | grep -q '"updated_lead_time_days"'
+
+      - name: GET /ready
+        run: |
+          curl -sf http://localhost:8090/ready | tee /dev/stderr | grep -q '"ready":true'
+
+      - name: POST /v2/lead-time/simulate (deterministic default, contract fields)
+        run: |
+          curl -sf http://localhost:8090/v2/lead-time/simulate \
+            -H 'content-type: application/json' \
+            -d '{"request_id":"CI-V2-1","order":{"product_type":"t-shirt","quantity":5000,"deadline_days":150},
+                 "supplier":{"supplier_id":"GDB_SYN_V1_SUP_000001","capacity_per_day":500,
+                 "material_ready_days":7,"production_days":12,"qc_days":3,"logistics_days":18,"confidence":0.75},
+                 "source_observation_ids":["GDB_SYN_V1_OBS_000001"]}' \
+            | tee /dev/stderr \
+            | python -c "import json,sys; b=json.load(sys.stdin); assert b['evaluation_mode']=='deterministic', b['evaluation_mode']; q=b['quantiles']; assert 0<q['p50_days']<=q['p80_days']<=q['p90_days']; assert b['persistence']['status'] in ('unavailable','skipped'); assert b['source_observation_ids']==['GDB_SYN_V1_OBS_000001']; print('v2 contract ok')"
+
+      - name: POST /v2/reforecast (events applied, delta disclosed)
+        run: |
+          curl -sf http://localhost:8090/v2/reforecast \
+            -H 'content-type: application/json' \
+            -d '{"request_id":"CI-V2-2","order":{"product_type":"t-shirt","quantity":5000,"deadline_days":150},
+                 "supplier":{"supplier_id":"GDB_SYN_V1_SUP_000001","capacity_per_day":500,
+                 "material_ready_days":7,"production_days":12,"qc_days":3,"logistics_days":18,"confidence":0.75},
+                 "events":[{"event_type":"supplier_response_delay","response_delay_ratio":3.5}]}' \
+            | tee /dev/stderr \
+            | python -c "import json,sys; b=json.load(sys.stdin); assert b['applied_events']; assert b['previous_quantiles'] is not None; assert b['delta']['p50_days']>=0; print('v2 reforecast ok')"
+
+  giraffe-db-e2e:
+    name: Real HTTP E2E vs giraffe-db
+    runs-on: ubuntu-latest
+    # giraffe-db is a private repository; the real-HTTP E2E runs when a token
+    # with read access is configured (GIRAFFE_DB_CI_TOKEN secret). Without it,
+    # the job reports the skip explicitly instead of faking the integration.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check giraffe-db access
+        id: gdb
+        env:
+          GIRAFFE_DB_CI_TOKEN: ${{ secrets.GIRAFFE_DB_CI_TOKEN }}
+        run: |
+          if [ -n "$GIRAFFE_DB_CI_TOKEN" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::GIRAFFE_DB_CI_TOKEN not configured; real-HTTP giraffe-db E2E skipped (run scripts/validate_gltg_giraffe_db_e2e.py locally)."
+          fi
+
+      - name: Clone giraffe-db
+        if: steps.gdb.outputs.available == 'true'
+        env:
+          GIRAFFE_DB_CI_TOKEN: ${{ secrets.GIRAFFE_DB_CI_TOKEN }}
+        run: |
+          git clone "https://x-access-token:${GIRAFFE_DB_CI_TOKEN}@github.com/GiraffeTechnology/giraffe-db.git" ../giraffe-db
+
+      - name: Install GLTG + giraffe-db
+        if: steps.gdb.outputs.available == 'true'
+        run: |
+          python -m pip install -e ".[dev]"
+          python -m pip install -e "../giraffe-db[dev]"
+
+      - name: Real HTTP E2E (GLTG <-> giraffe-db)
+        if: steps.gdb.outputs.available == 'true'
+        run: python scripts/validate_gltg_giraffe_db_e2e.py
+
+  docker:
+    name: Docker build + startup smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t giraffe-gltg:ci .
+
+      - name: Startup smoke (non-root, /health, /ready, v2 deterministic)
+        run: |
+          docker run -d --name gltg -p 8090:8090 giraffe-gltg:ci
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8090/health > /dev/null; then break; fi
+            sleep 1
+          done
+          docker exec gltg id -u | grep -qv '^0$'
+          curl -sf http://localhost:8090/health | grep -q '"status":"ok"'
+          curl -sf http://localhost:8090/ready | grep -q '"evaluator_mode":"deterministic"'
+          curl -sf http://localhost:8090/v2/lead-time/simulate \
+            -H 'content-type: application/json' \
+            -d '{"request_id":"CI-DOCKER","order":{"product_type":"t-shirt","quantity":1000}}' \
+            | grep -q '"evaluation_mode":"deterministic"'
+          docker rm -f gltg

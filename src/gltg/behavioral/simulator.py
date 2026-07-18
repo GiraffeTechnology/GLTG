@@ -129,11 +129,6 @@ class BehavioralLeadTimeSimulator:
                 severity="low",
                 message="No source_observation_ids were provided; lineage is incomplete.",
             ))
-        warnings.append(GLTGWarningV2(
-            code="PERSISTENCE_NOT_CONFIGURED",
-            severity="low",
-            message="GLTG run id is generated, but giraffe-db persistence is not configured in this service build.",
-        ))
 
         return GLTGSimulationResponseV2(
             ok=True,
@@ -169,10 +164,9 @@ class BehavioralLeadTimeSimulator:
                 "source_observation_ids": req.source_observation_ids,
             },
             warnings=warnings,
-            persistence=GLTGPersistenceRef(
-                persisted_to_giraffe_db=False,
-                gltg_behavior_input_id=None,
-            ),
+            # The v2 pipeline replaces this with the actual persistence outcome.
+            persistence=GLTGPersistenceRef(status="unavailable"),
+            source_observation_ids=list(req.source_observation_ids),
         )
 
     def _compose_pseudo_lognormal(

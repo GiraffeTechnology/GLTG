@@ -13,6 +13,10 @@ COPY src ./src
 
 RUN pip install --no-cache-dir -e ".[api]"
 
+# Non-root execution.
+RUN useradd --create-home --uid 10001 gltg && chown -R gltg:gltg /app
+USER gltg
+
 EXPOSE 8090
 
 # Honors GLTG_HOST / GLTG_PORT at runtime.

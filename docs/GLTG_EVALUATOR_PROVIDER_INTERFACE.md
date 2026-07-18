@@ -42,7 +42,7 @@ Defined in `src/gltg/evaluator/providers/base.py`.
 
 | `GLTG_LLM_PROVIDER` | Adapter | Transport |
 | --- | --- | --- |
-| `qwen` *(default)* | `QwenProvider` | OpenAI-compatible (DashScope compatible mode) |
+| `qwen` | `QwenProvider` | OpenAI-compatible (DashScope compatible mode) |
 | `openai_compatible` | `OpenAICompatibleProvider` | OpenAI `/chat/completions` |
 | `anthropic` | `AnthropicProvider` | Anthropic Messages API |
 | `gemini` | `GeminiProvider` | Google `generateContent` |
@@ -50,7 +50,7 @@ Defined in `src/gltg/evaluator/providers/base.py`.
 | `local` | `LocalProvider` | OpenAI-compatible (vLLM/Ollama/TGI/private gateway) |
 | `mock` | `MockGLTGProvider` | none — deterministic, for CI |
 
-`qwen`, `deepseek`, and `local` reuse the OpenAI-compatible transport with
+`local` *(default; reference model `qwen3.5-9b-int4`)*, `qwen`, and `deepseek` reuse the OpenAI-compatible transport with
 different default base URLs. Pointing `GLTG_LLM_BASE_URL` at a private
 OpenAI-compatible endpoint is the recommended path for enterprise models.
 
