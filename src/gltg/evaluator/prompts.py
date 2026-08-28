@@ -9,7 +9,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from .schemas import ASSESSMENT_SCHEMA_VERSION, GLTGAssessmentInput, GLTGAssessmentPacket
+from .schemas import (
+    ASSESSMENT_SCHEMA_VERSION,
+    GLTGAssessmentInput,
+    GLTGAssessmentPacket,
+)
 
 SYSTEM_PROMPT = """\
 You are a trade lead-time risk evaluator.
@@ -45,6 +49,13 @@ Distinguish:
 Every material conclusion must cite evidence_refs that point to provided input \
 records (communication events, quotes, behavior snapshots, observations, \
 operator-confirmed records). Do not cite evidence that was not provided.
+
+The deterministic/statistical GLTG engine is the sole source of P50/P80/P90, \
+components, buffers, and deadline-feasibility calculations. Do not calculate, \
+override, or recommend lead-time numbers. Set the schema's p50_days, p80_days, \
+and p90_days fields to 0; they are ignored at the trust boundary. Your approved \
+role is qualitative assessment, evidence linkage, follow-up questions, and \
+explanation only.
 
 Return JSON only.
 The JSON must conform exactly to the provided schema.
@@ -95,4 +106,4 @@ def assessment_schema_dict() -> dict[str, Any]:
     return GLTGAssessmentPacket.model_json_schema()
 
 
-__all__ = ["SYSTEM_PROMPT", "build_user_payload", "assessment_schema_dict"]
+__all__ = ["SYSTEM_PROMPT", "assessment_schema_dict", "build_user_payload"]

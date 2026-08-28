@@ -216,7 +216,17 @@ POST /v2/reforecast
 Run service:
 
 ```bash
+export GLTG_INBOUND_SERVICE_AUTH_SECRET='replace-with-secret-manager-value'
 uvicorn gltg.api.main:app --host 0.0.0.0 --port 8090
+```
+
+Every v2 request requires authenticated service headers. `tenant_id` is
+mandatory in the JSON body and must exactly match the authenticated tenant;
+the body never selects tenant identity.
+
+```text
+X-Service-Auth: <GLTG_INBOUND_SERVICE_AUTH_SECRET>
+X-Service-Tenant-ID: <authenticated-tenant>
 ```
 
 ### giraffe-db evidence and persistence
@@ -231,7 +241,9 @@ GLTG_PERSIST_RUNS=true                    # optional run persistence
 
 A v2 request with `"evidence": {"use_giraffe_db": true}` retrieves the
 tenant-scoped supplier record and behavior summary
-(`X-Service-Tenant-ID` = request `tenant_id`). Failures are explicit:
+(`X-Service-Tenant-ID` = request `tenant_id`). A configured giraffe-db URL
+without a service-auth secret fails before transport, and every supplier,
+behavior-summary, and persistence response must echo the same tenant. Failures are explicit:
 unreachable giraffe-db → HTTP 503 `DB_UNAVAILABLE`; rejected auth/tenant →
 HTTP 502 `EVIDENCE_AUTH_FAILED` (fail closed); missing supplier/behavior →
 `EVIDENCE_NOT_FOUND` / `MISSING_BEHAVIOR_EVIDENCE` warnings with reduced

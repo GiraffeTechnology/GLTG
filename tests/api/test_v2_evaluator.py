@@ -10,7 +10,13 @@ from fastapi.testclient import TestClient
 
 from gltg.api.main import app
 
-client = TestClient(app)
+client = TestClient(
+    app,
+    headers={
+        "X-Service-Auth": "test-inbound-secret",
+        "X-Service-Tenant-ID": "tenant_default",
+    },
+)
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 
@@ -34,9 +40,12 @@ def test_simulate_returns_provider_metadata_and_packet():
     body = res.json()
 
     assert body["assessment_schema_version"] == "gltg-assessment-v1"
-    assert body["model_provider"] == "mock"
-    assert body["model_name"] == "qwen3.5:2b"
-    assert body["evaluation_mode"] == "llm"
+    assert body["model_provider"] == "deterministic_rules"
+    assert body["model_name"] == body["rule_version"]
+    assert body["evaluation_mode"] == "deterministic_with_llm_auxiliary"
+    auxiliary = body["explanation_json"]["llm_auxiliary"]
+    assert auxiliary["provider"] == "mock"
+    assert auxiliary["model"] == "qwen3.5:2b"
 
     assert "quantiles" in body
     q = body["quantiles"]
@@ -45,9 +54,11 @@ def test_simulate_returns_provider_metadata_and_packet():
     packet = body["assessment_packet"]
     assert packet["assessment_schema_version"] == "gltg-assessment-v1"
     assert "lead_time_risk_assessment" in packet
+    assert packet["lead_time_risk_assessment"]["p50_days"] == q["p50_days"]
+    assert packet["llm_auxiliary"]["provider"] == "mock"
 
-    assert body["explanation_json"]["evidence_refs"]
-    assert body["explanation_json"]["follow_up_questions"]
+    assert auxiliary["evidence_refs"]
+    assert auxiliary["follow_up_questions"]
 
 
 def test_simulate_unknown_material_produces_weak_evidence_warnings():
@@ -87,4 +98,4 @@ def test_reforecast_discloses_previous_quantiles_and_unapplied_events():
     assert body["applied_events"] == []
     assert body["unapplied_events"] == payload["events"]
     assert body["previous_quantiles"] is not None
-    assert body["evaluation_mode"] == "llm"
+    assert body["evaluation_mode"] == "deterministic_with_llm_auxiliary"

@@ -12,6 +12,8 @@ jobs:
     # No env pinning: CI must exercise the shipped defaults (deterministic
     # evaluator, no LLM calls). Evaluator tests that need llm mode set it
     # explicitly with the deterministic mock provider.
+    env:
+      GLTG_INBOUND_SERVICE_AUTH_SECRET: ci-inbound-secret
     strategy:
       fail-fast: false
       matrix:
@@ -108,7 +110,9 @@ jobs:
         run: |
           curl -sf http://localhost:8090/v2/lead-time/simulate \
             -H 'content-type: application/json' \
-            -d '{"request_id":"CI-V2-1","order":{"product_type":"t-shirt","quantity":5000,"deadline_days":150},
+            -H 'X-Service-Auth: ci-inbound-secret' \
+            -H 'X-Service-Tenant-ID: ci-tenant' \
+            -d '{"request_id":"CI-V2-1","tenant_id":"ci-tenant","order":{"product_type":"t-shirt","quantity":5000,"deadline_days":150},
                  "supplier":{"supplier_id":"GDB_SYN_V1_SUP_000001","capacity_per_day":500,
                  "material_ready_days":7,"production_days":12,"qc_days":3,"logistics_days":18,"confidence":0.75},
                  "source_observation_ids":["GDB_SYN_V1_OBS_000001"]}' \
@@ -119,7 +123,9 @@ jobs:
         run: |
           curl -sf http://localhost:8090/v2/reforecast \
             -H 'content-type: application/json' \
-            -d '{"request_id":"CI-V2-2","order":{"product_type":"t-shirt","quantity":5000,"deadline_days":150},
+            -H 'X-Service-Auth: ci-inbound-secret' \
+            -H 'X-Service-Tenant-ID: ci-tenant' \
+            -d '{"request_id":"CI-V2-2","tenant_id":"ci-tenant","order":{"product_type":"t-shirt","quantity":5000,"deadline_days":150},
                  "supplier":{"supplier_id":"GDB_SYN_V1_SUP_000001","capacity_per_day":500,
                  "material_ready_days":7,"production_days":12,"qc_days":3,"logistics_days":18,"confidence":0.75},
                  "events":[{"event_type":"supplier_response_delay","response_delay_ratio":3.5}]}' \
@@ -180,7 +186,8 @@ jobs:
 
       - name: Startup smoke (non-root, /health, /ready, v2 deterministic)
         run: |
-          docker run -d --name gltg -p 8090:8090 giraffe-gltg:ci
+          docker run -d --name gltg -p 8090:8090 \
+            -e GLTG_INBOUND_SERVICE_AUTH_SECRET=ci-inbound-secret giraffe-gltg:ci
           for i in $(seq 1 30); do
             if curl -sf http://localhost:8090/health > /dev/null; then break; fi
             sleep 1
@@ -190,6 +197,8 @@ jobs:
           curl -sf http://localhost:8090/ready | grep -q '"evaluator_mode":"deterministic"'
           curl -sf http://localhost:8090/v2/lead-time/simulate \
             -H 'content-type: application/json' \
-            -d '{"request_id":"CI-DOCKER","order":{"product_type":"t-shirt","quantity":1000}}' \
+            -H 'X-Service-Auth: ci-inbound-secret' \
+            -H 'X-Service-Tenant-ID: ci-tenant' \
+            -d '{"request_id":"CI-DOCKER","tenant_id":"ci-tenant","order":{"product_type":"t-shirt","quantity":1000}}' \
             | grep -q '"evaluation_mode":"deterministic"'
           docker rm -f gltg

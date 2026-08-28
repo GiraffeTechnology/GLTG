@@ -6,7 +6,13 @@ from fastapi.testclient import TestClient
 
 from gltg.api.main import app
 
-client = TestClient(app)
+client = TestClient(
+    app,
+    headers={
+        "X-Service-Auth": "test-inbound-secret",
+        "X-Service-Tenant-ID": "tenant-a",
+    },
+)
 
 PAYLOAD = {
     "request_id": "CONTRACT-1",
