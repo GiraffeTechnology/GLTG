@@ -23,6 +23,18 @@ from .providers.base import GLTGLLMProvider, ProviderError
 from .schemas import GLTGAssessmentInput, GLTGAssessmentPacket
 from .validator import PacketParseError, parse_packet, validate_and_repair
 
+QUALITATIVE_PROVIDER_WARNING_CODES = frozenset(
+    {
+        "CONFIRMED_WITHOUT_EVIDENCE_DOWNGRADED",
+        "HIGH_CONFIDENCE_WITHOUT_EVIDENCE_DOWNGRADED",
+        "UNKNOWN_MATERIAL_CANNOT_BE_CONFIRMED",
+        "UNKNOWN_EXECUTION_CANNOT_BE_CONFIRMED",
+        "UNSUPPORTED_FAST_PRECISE_QUOTE",
+        "SLOW_RESPONSE_NOT_LOW_ENGAGEMENT",
+        "RESPONSE_DELAY_PROBABILITIES_RENORMALIZED",
+    }
+)
+
 
 class GLTGEvaluatorOrchestrator:
     """Provider-agnostic entry point for GLTG v2 lead-time evaluation."""
@@ -102,8 +114,11 @@ class GLTGEvaluatorOrchestrator:
         settings: EvaluatorSettings,
     ) -> GLTGSimulationResponseV2:
         canonical.evaluation_mode = "deterministic_with_llm_unavailable"
-        canonical.manual_review_required = True
-        canonical.risk.manual_review_required = True
+        self._set_manual_review(
+            canonical,
+            required=True,
+            reasons=["optional LLM auxiliary evaluator is unavailable"],
+        )
         canonical.explanation_json["llm_auxiliary"] = {
             "status": "unavailable",
             "provider": settings.provider,
@@ -153,11 +168,46 @@ class GLTGEvaluatorOrchestrator:
         canonical.evaluation_mode = "deterministic_with_llm_auxiliary"
         canonical.explanation_json["llm_auxiliary"] = auxiliary
         canonical.assessment_packet["llm_auxiliary"] = auxiliary
-        canonical.warnings.extend(warnings)
-        if packet.manual_review.required:
-            canonical.manual_review_required = True
-            canonical.risk.manual_review_required = True
+        # Provider numerical fields are ignored, so warnings derived from those
+        # fields must also be ignored. Only an explicit qualitative allowlist
+        # may be published beside canonical deterministic facts.
+        canonical.warnings.extend(
+            warning
+            for warning in warnings
+            if warning.code in QUALITATIVE_PROVIDER_WARNING_CODES
+        )
+        GLTGEvaluatorOrchestrator._set_manual_review(
+            canonical,
+            required=packet.manual_review.required,
+            reasons=packet.manual_review.reasons,
+        )
         return canonical
+
+    @staticmethod
+    def _set_manual_review(
+        canonical: GLTGSimulationResponseV2,
+        *,
+        required: bool,
+        reasons: list[str],
+    ) -> None:
+        """Synchronize every public/manual-review representation fail-safely."""
+
+        review = canonical.assessment_packet.setdefault(
+            "manual_review", {"required": False, "reasons": []}
+        )
+        final_required = bool(
+            required
+            or canonical.manual_review_required
+            or canonical.risk.manual_review_required
+            or review.get("required", False)
+        )
+        review["required"] = final_required
+        review_reasons = review.setdefault("reasons", [])
+        for reason in reasons:
+            if reason not in review_reasons:
+                review_reasons.append(reason)
+        canonical.manual_review_required = final_required
+        canonical.risk.manual_review_required = final_required
 
 
 # Module-level singleton used by the API routes.
