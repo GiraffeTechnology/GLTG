@@ -135,9 +135,10 @@ jobs:
   giraffe-db-e2e:
     name: Real HTTP E2E vs giraffe-db
     runs-on: ubuntu-latest
-    # giraffe-db is a private repository; the real-HTTP E2E runs when a token
-    # with read access is configured (GIRAFFE_DB_CI_TOKEN secret). Without it,
-    # the job reports the skip explicitly instead of faking the integration.
+    # Deliberately invalid until audit accepts a giraffe-db Stage 1 revision.
+    # The prerequisite step fails closed instead of allowing a floating ref.
+    env:
+      GIRAFFE_DB_REVISION: AUDIT_ACCEPTED_GIRAFFE_DB_STAGE1_REVISION_REQUIRED
     steps:
       - uses: actions/checkout@v4
 
@@ -146,33 +147,46 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Check giraffe-db access
-        id: gdb
+      - name: Require giraffe-db credential
+        shell: bash
         env:
           GIRAFFE_DB_CI_TOKEN: ${{ secrets.GIRAFFE_DB_CI_TOKEN }}
         run: |
-          if [ -n "$GIRAFFE_DB_CI_TOKEN" ]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::GIRAFFE_DB_CI_TOKEN not configured; real-HTTP giraffe-db E2E skipped (run scripts/validate_gltg_giraffe_db_e2e.py locally)."
+          if [[ -z "${GIRAFFE_DB_CI_TOKEN:-}" ]]; then
+            echo "::error::Required private-repository credential is not configured."
+            exit 1
+          fi
+          if [[ ! "$GIRAFFE_DB_REVISION" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::No audit-accepted immutable giraffe-db revision is configured."
+            exit 1
           fi
 
-      - name: Clone giraffe-db
-        if: steps.gdb.outputs.available == 'true'
-        env:
-          GIRAFFE_DB_CI_TOKEN: ${{ secrets.GIRAFFE_DB_CI_TOKEN }}
+      - name: Clone giraffe-db at accepted revision
+        uses: actions/checkout@v4
+        with:
+          repository: GiraffeTechnology/giraffe-db
+          ref: ${{ env.GIRAFFE_DB_REVISION }}
+          token: ${{ secrets.GIRAFFE_DB_CI_TOKEN }}
+          path: giraffe-db
+          persist-credentials: false
+
+      - name: Verify giraffe-db revision
+        shell: bash
         run: |
-          git clone "https://x-access-token:${GIRAFFE_DB_CI_TOKEN}@github.com/GiraffeTechnology/giraffe-db.git" ../giraffe-db
+          actual_revision="$(git -C giraffe-db rev-parse HEAD)"
+          if [[ "$actual_revision" != "$GIRAFFE_DB_REVISION" ]]; then
+            echo "::error::Checked-out giraffe-db revision does not match the accepted revision."
+            exit 1
+          fi
 
       - name: Install GLTG + giraffe-db
-        if: steps.gdb.outputs.available == 'true'
         run: |
           python -m pip install -e ".[dev]"
-          python -m pip install -e "../giraffe-db[dev]"
+          python -m pip install -e "./giraffe-db[dev]"
 
       - name: Real HTTP E2E (GLTG <-> giraffe-db)
-        if: steps.gdb.outputs.available == 'true'
+        env:
+          GIRAFFE_DB_REPO: ${{ github.workspace }}/giraffe-db
         run: python scripts/validate_gltg_giraffe_db_e2e.py
 
   docker:
