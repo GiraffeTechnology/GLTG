@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
+import re
 
 
 WORKFLOW_PATH = Path(__file__).parents[2] / ".github" / "workflows" / "ci.yml"
@@ -57,4 +57,3 @@ def test_missing_credentials_and_repository_access_fail_closed_without_leakage()
     # Never embed the credential into a URL/command or print its value.
     assert "x-access-token" not in job
     assert not re.search(r"echo[^\n]*\$\{?GIRAFFE_DB_CI_TOKEN", job)
-
