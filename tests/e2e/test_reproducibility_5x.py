@@ -21,6 +21,7 @@ def five_results():
         quantity=2000,
         participants=participants,
         requested_date=date(2026, 12, 31),
+        evaluation_date=date(2026, 1, 1),
     )
     engine = LeadTimeGraphEngine()
     return [engine.evaluate(order) for _ in range(5)]

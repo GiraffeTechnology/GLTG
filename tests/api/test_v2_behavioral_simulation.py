@@ -17,7 +17,13 @@ from fastapi.testclient import TestClient
 from gltg.api.main import app
 from gltg.behavioral.schemas import GLTGSimulationRequestV2, GLTGSimulationResponseV2
 
-client = TestClient(app)
+client = TestClient(
+    app,
+    headers={
+        "X-Service-Auth": "test-inbound-secret",
+        "X-Service-Tenant-ID": "tenant_default",
+    },
+)
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 

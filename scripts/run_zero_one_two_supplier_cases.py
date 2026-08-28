@@ -4,15 +4,17 @@ Run from the GLTG/ directory:
     uv run python scripts/run_zero_one_two_supplier_cases.py
 """
 
-import sys
 import pathlib
+import sys
+from datetime import date
 
 ROOT = pathlib.Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 EXAMPLES = ROOT / "examples"
+EVALUATION_DATE = date(2026, 1, 1)
 
-from gltg.integrations.json_io import load_order_from_json
 from gltg.engine import LeadTimeGraphEngine
+from gltg.integrations.json_io import load_order_from_json
 from gltg.models.enums import FeasibilityStatus, RiskFlagCode
 
 
@@ -23,6 +25,9 @@ def run_case(label: str, json_file: str, engine: LeadTimeGraphEngine):
     order_path = EXAMPLES / json_file
     print(f"Loading: {order_path}")
     order = load_order_from_json(order_path)
+    # The fixtures describe a 2026 planning horizon. Pin the engine clock so
+    # this CI contract cannot change as the runner's wall clock advances.
+    order.evaluation_date = EVALUATION_DATE
     print(f"  order_id    : {order.order_id}")
     print(f"  quantity    : {order.quantity:,}")
     print(f"  participants: {len(order.participants)}")
@@ -114,3 +119,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
