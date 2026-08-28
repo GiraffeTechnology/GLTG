@@ -80,6 +80,13 @@ def test_authenticated_matching_tenant_is_accepted() -> None:
     assert response.status_code == 200
 
 
+def test_openapi_marks_tenant_identity_headers_required() -> None:
+    operation = app.openapi()["paths"]["/v2/lead-time/simulate"]["post"]
+    headers = {item["name"]: item for item in operation["parameters"]}
+    assert headers["X-Service-Tenant-ID"]["required"] is True
+    assert headers["X-Service-Auth"]["required"] is True
+
+
 def test_configured_db_without_service_secret_fails_before_transport(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GLTG_GIRAFFE_DB_BASE_URL", BASE)
     monkeypatch.delenv("GLTG_GIRAFFE_DB_SERVICE_AUTH_SECRET", raising=False)
@@ -123,3 +130,4 @@ def test_secret_is_never_returned_in_auth_error() -> None:
             client.get_supplier(SUPPLIER, TENANT)
     assert secret not in str(captured.value)
     assert secret not in repr(client)
+
