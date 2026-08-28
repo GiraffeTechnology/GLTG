@@ -6,7 +6,13 @@ from fastapi.testclient import TestClient
 
 from gltg.api.main import app
 
-client = TestClient(app)
+client = TestClient(
+    app,
+    headers={
+        "X-Service-Auth": "test-inbound-secret",
+        "X-Service-Tenant-ID": "tenant-a",
+    },
+)
 
 
 def _payload(events: list[dict], **overrides) -> dict:
@@ -161,6 +167,10 @@ def test_wrong_tenant_evidence_access_denied(monkeypatch):
         response = client.post(
             "/v2/reforecast",
             json=_payload([], evidence={"use_giraffe_db": True}, tenant_id="tenant-wrong"),
+            headers={
+                "X-Service-Auth": "test-inbound-secret",
+                "X-Service-Tenant-ID": "tenant-wrong",
+            },
         )
     assert response.status_code == 502
     assert response.json()["code"] == "EVIDENCE_AUTH_FAILED"

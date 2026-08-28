@@ -23,7 +23,13 @@ from gltg.integrations.giraffe_db_client import (
     GiraffeDBUnavailable,
 )
 
-client = TestClient(app)
+client = TestClient(
+    app,
+    headers={
+        "X-Service-Auth": "test-inbound-secret",
+        "X-Service-Tenant-ID": "tenant-demo",
+    },
+)
 
 BASE = "http://giraffe-db.test"
 SUPPLIER_ID = "GDB_SYN_V1_SUP_000001"
@@ -40,6 +46,7 @@ SUPPLIER_RECORD = {
 }
 EMPTY_SUMMARY = {
     "supplier_id": SUPPLIER_ID,
+    "tenant_id": TENANT,
     "observation_count": 0,
     "latest_snapshot": None,
     "response_delay": {"response_delay_ratio": None},
@@ -176,6 +183,7 @@ class TestSimulationEvidencePath:
     def test_snapshot_features_feed_simulation_and_lineage(self, gdb_env):
         summary = {
             "supplier_id": SUPPLIER_ID,
+            "tenant_id": TENANT,
             "observation_count": 12,
             "latest_snapshot": {
                 "snapshot_id": "GDB_SYN_V1_SUPFEAT_000001",

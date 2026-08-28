@@ -25,8 +25,8 @@ def _evaluate(num_participants: int, requested_date=date(2026, 12, 31)):
     order = make_order(
         participants=participants,
         requested_date=requested_date,
+        evaluation_date=date(2026, 1, 1),
     )
-    order.evaluation_date = date(2026, 1, 1)
     return engine.evaluate(order)
 
 

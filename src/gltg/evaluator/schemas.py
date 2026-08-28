@@ -1,8 +1,9 @@
 """Structured GLTG Assessment Packet schema (``gltg-assessment-v1``).
 
-The assessment packet is the *primary output* of the LLM-assisted evaluator.
-The LLM evaluates trade context; GLTG validates, normalizes, constrains, and
-packages the result into this schema. Nothing here is provider-specific.
+The packet is an auxiliary qualitative provider contract. Canonical lead-time
+numbers always come from the deterministic/statistical engine. Legacy numeric
+fields remain in schema v1 for adapter compatibility but are ignored at the
+trust boundary. Nothing here is provider-specific.
 """
 
 from __future__ import annotations
@@ -188,17 +189,17 @@ GLTGAssessmentInput = GLTGSimulationRequestV2
 
 
 __all__ = [
-    "ASSESSMENT_SCHEMA_VERSION",
     "ALLOWED_EVIDENCE_REF_TYPES",
+    "ASSESSMENT_SCHEMA_VERSION",
+    "AssessmentAudit",
     "AssessmentStatus",
+    "FallbackSupplier",
     "GLTGAssessmentInput",
     "GLTGAssessmentPacket",
-    "SupplierExecutionAssessment",
-    "MaterialAvailabilityAssessment",
-    "ResponseDelayReasonAssessment",
-    "QuoteConfidenceAssessment",
     "LeadTimeRiskAssessment",
     "ManualReview",
-    "FallbackSupplier",
-    "AssessmentAudit",
+    "MaterialAvailabilityAssessment",
+    "QuoteConfidenceAssessment",
+    "ResponseDelayReasonAssessment",
+    "SupplierExecutionAssessment",
 ]

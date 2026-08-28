@@ -7,6 +7,7 @@ services:
     environment:
       GLTG_HOST: 0.0.0.0
       GLTG_PORT: 8090
+      GLTG_INBOUND_SERVICE_AUTH_SECRET: ${GLTG_INBOUND_SERVICE_AUTH_SECRET:?required}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8090/health').status==200 else 1)"]
       interval: 30s

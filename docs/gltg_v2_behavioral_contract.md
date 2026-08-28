@@ -14,6 +14,19 @@ POST /v2/reforecast
 
 Existing v1 endpoints remain available for migration compatibility.
 
+## Authenticated tenant boundary
+
+Every v2 request requires `X-Service-Auth` and `X-Service-Tenant-ID`. The body
+`tenant_id` is mandatory and must exactly match the authenticated header tenant;
+it is never trusted as an identity source. Missing, blank, invalid, or mismatched
+identity fails closed before evidence access or persistence.
+
+Only the deterministic/statistical engine produces P50/P80/P90 and component
+numbers. In explicit LLM mode, Qwen or any other provider can supply only the
+bounded qualitative `llm_auxiliary` projection. Provider-returned lead-time
+numbers are ignored, and provider unavailability is explicit without changing
+the canonical numbers.
+
 ## Contract Fixtures
 
 Shared cross-repo fixtures live in:

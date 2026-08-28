@@ -37,6 +37,7 @@ from ..integrations.giraffe_db_client import (
     GiraffeDBClient,
     GiraffeDBError,
     GiraffeDBMalformedResponse,
+    GiraffeDBNotConfigured,
     GiraffeDBNotFound,
     GiraffeDBUnavailable,
     client_from_env,
@@ -49,6 +50,13 @@ class EvidenceUnavailableError(GLTGError):
 
 class EvidenceAuthError(GLTGError):
     """giraffe-db rejected our service auth or tenant; fail closed."""
+
+
+def _client_from_env() -> GiraffeDBClient | None:
+    try:
+        return client_from_env()
+    except GiraffeDBNotConfigured as exc:
+        raise EvidenceUnavailableError(str(exc)) from exc
 
 
 def _warn(code: str, severity: str, message: str) -> GLTGWarningV2:
@@ -334,6 +342,8 @@ def persist_run(
     payload = {key: value for key, value in payload.items() if value is not None}
     try:
         stored = client.persist_gltg_run(payload, req.tenant_id)
+    except GiraffeDBAuthError as exc:
+        raise EvidenceAuthError(str(exc)) from exc
     except GiraffeDBError as exc:
         response.persistence = GLTGPersistenceRef(
             status="failed", detail=f"{exc.code}: {exc}"
@@ -427,7 +437,7 @@ def _apply_event(req: GLTGSimulationRequestV2, event: dict[str, Any]) -> bool:
 def run_simulation(
     req: GLTGSimulationRequestV2, *, persist: bool = True
 ) -> GLTGSimulationResponseV2:
-    client = client_from_env()
+    client = _client_from_env()
     resolved = resolve_evidence(req, client)
     response = gltg_evaluator.evaluate(req)
     _apply_evidence_to_response(response, resolved)
@@ -437,7 +447,7 @@ def run_simulation(
 
 
 def run_reforecast(req: GLTGReforecastRequestV2) -> GLTGReforecastResponseV2:
-    client = client_from_env()
+    client = _client_from_env()
 
     base_req = GLTGSimulationRequestV2.model_validate(
         req.model_dump(mode="json", exclude={"events"})
