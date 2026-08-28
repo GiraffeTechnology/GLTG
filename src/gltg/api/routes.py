@@ -111,10 +111,8 @@ def reforecast(req: ReforecastRequest) -> ReforecastResponse:
 )
 def simulate_lead_time_v2(
     req: GLTGSimulationRequestV2,
-    x_service_tenant_id: Annotated[
-        str | None, Header(alias="X-Service-Tenant-ID")
-    ] = None,
-    x_service_auth: Annotated[str | None, Header(alias="X-Service-Auth")] = None,
+    x_service_tenant_id: Annotated[str, Header(alias="X-Service-Tenant-ID")],
+    x_service_auth: Annotated[str, Header(alias="X-Service-Auth")],
 ) -> GLTGSimulationResponseV2:
     require_tenant_identity(x_service_tenant_id, x_service_auth, [req.tenant_id])
     return run_simulation(req)
@@ -127,10 +125,8 @@ def simulate_lead_time_v2(
 )
 def enumerate_paths_v2(
     req: GLTGPathsEnumerateRequestV2,
-    x_service_tenant_id: Annotated[
-        str | None, Header(alias="X-Service-Tenant-ID")
-    ] = None,
-    x_service_auth: Annotated[str | None, Header(alias="X-Service-Auth")] = None,
+    x_service_tenant_id: Annotated[str, Header(alias="X-Service-Tenant-ID")],
+    x_service_auth: Annotated[str, Header(alias="X-Service-Auth")],
 ) -> GLTGPathsEnumerateResponseV2:
     require_tenant_identity(
         x_service_tenant_id,
@@ -165,10 +161,9 @@ def enumerate_paths_v2(
 )
 def reforecast_v2(
     req: GLTGReforecastRequestV2,
-    x_service_tenant_id: Annotated[
-        str | None, Header(alias="X-Service-Tenant-ID")
-    ] = None,
-    x_service_auth: Annotated[str | None, Header(alias="X-Service-Auth")] = None,
+    x_service_tenant_id: Annotated[str, Header(alias="X-Service-Tenant-ID")],
+    x_service_auth: Annotated[str, Header(alias="X-Service-Auth")],
 ) -> GLTGReforecastResponseV2:
     require_tenant_identity(x_service_tenant_id, x_service_auth, [req.tenant_id])
     return run_reforecast(req)
+
