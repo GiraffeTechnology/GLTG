@@ -64,6 +64,26 @@ def create_app() -> FastAPI:
     async def _validation_error_handler(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
+        missing_headers = {
+            str(error["loc"][-1]).lower()
+            for error in exc.errors()
+            if error.get("type") == "missing"
+            and len(error.get("loc", ())) >= 2
+            and error["loc"][0] == "header"
+        }
+        if "x-service-tenant-id" in missing_headers:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "error": "TENANT_CONTEXT_REQUIRED",
+                    "code": "TENANT_CONTEXT_REQUIRED",
+                },
+            )
+        if "x-service-auth" in missing_headers:
+            return JSONResponse(
+                status_code=401,
+                content={"error": "CALLER_AUTH_REQUIRED", "code": "CALLER_AUTH_REQUIRED"},
+            )
         return JSONResponse(
             status_code=422,
             content={"error": str(exc.errors()), "code": "VALIDATION_ERROR"},
@@ -90,3 +110,4 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
