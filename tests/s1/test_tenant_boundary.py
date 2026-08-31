@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import json
+
 import httpx
 import pytest
 import respx
@@ -130,4 +133,67 @@ def test_secret_is_never_returned_in_auth_error() -> None:
             client.get_supplier(SUPPLIER, TENANT)
     assert secret not in str(captured.value)
     assert secret not in repr(client)
+
+
+def test_non_ascii_auth_bytes_fail_closed_before_calculation_or_persistence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exercise raw ASGI header bytes that TestClient cannot faithfully emit."""
+
+    pipeline_calls = 0
+
+    def forbidden_pipeline(*args: object, **kwargs: object) -> None:
+        nonlocal pipeline_calls
+        pipeline_calls += 1
+        raise AssertionError("calculation/persistence pipeline must not run")
+
+    monkeypatch.setattr("gltg.api.routes.run_simulation", forbidden_pipeline)
+    payload = json.dumps(_payload()).encode("utf-8")
+    messages: list[dict[str, object]] = []
+    request_sent = False
+
+    async def receive() -> dict[str, object]:
+        nonlocal request_sent
+        if request_sent:
+            return {"type": "http.disconnect"}
+        request_sent = True
+        return {"type": "http.request", "body": payload, "more_body": False}
+
+    async def send(message: dict[str, object]) -> None:
+        messages.append(message)
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.3"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/v2/lead-time/simulate",
+        "raw_path": b"/v2/lead-time/simulate",
+        "query_string": b"",
+        "headers": [
+            (b"host", b"testserver"),
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(payload)).encode("ascii")),
+            (b"x-service-tenant-id", TENANT.encode("ascii")),
+            (b"x-service-auth", b"invalid-\xff-auth"),
+        ],
+        "client": ("127.0.0.1", 12345),
+        "server": ("127.0.0.1", 8090),
+        "root_path": "",
+    }
+    asyncio.run(app(scope, receive, send))
+
+    start = next(message for message in messages if message["type"] == "http.response.start")
+    body = b"".join(
+        message.get("body", b"")
+        for message in messages
+        if message["type"] == "http.response.body"
+    )
+    assert start["status"] == 401
+    assert json.loads(body) == {
+        "error": "CALLER_AUTH_INVALID",
+        "code": "CALLER_AUTH_INVALID",
+    }
+    assert pipeline_calls == 0
 

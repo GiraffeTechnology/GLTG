@@ -39,7 +39,13 @@ def require_tenant_identity(
     expected_secret = os.environ.get("GLTG_INBOUND_SERVICE_AUTH_SECRET", "").strip()
     if not expected_secret:
         raise InboundIdentityError("CALLER_AUTH_UNAVAILABLE", 503)
-    if not secrets.compare_digest(supplied_secret, expected_secret):
+    # ASGI header bytes are exposed as latin-1 strings. ``compare_digest``
+    # rejects non-ASCII ``str`` inputs with TypeError, which previously turned
+    # malformed credentials into a 500. Compare encoded bytes so every header
+    # value remains a constant-time invalid-credential decision.
+    if not secrets.compare_digest(
+        supplied_secret.encode("utf-8"), expected_secret.encode("utf-8")
+    ):
         raise InboundIdentityError("CALLER_AUTH_INVALID", 401)
 
     if any(body_tenant != tenant_id for body_tenant in tenant_ids):

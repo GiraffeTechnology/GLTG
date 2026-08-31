@@ -56,3 +56,18 @@ def test_missing_credentials_and_repository_access_fail_closed_without_leakage()
     # Never embed the credential into a URL/command or print its value.
     assert "x-access-token" not in job
     assert not re.search(r"echo[^\n]*\$\{?GIRAFFE_DB_CI_TOKEN", job)
+
+
+def test_clone_install_and_real_e2e_failures_propagate_to_the_required_job() -> None:
+    job = _real_e2e_job()
+
+    # GitHub's default step semantics are fail-fast. These escape hatches could
+    # turn a failed or skipped substantive step into a green required job.
+    assert "continue-on-error:" not in job
+    assert "if: always()" not in job
+    assert "if: failure()" not in job
+    assert "if: cancelled()" not in job
+    assert "|| true" not in job
+    assert "exit 0" not in job
+    assert "GIRAFFE_DB_REVISION: main" not in job
+    assert "GIRAFFE_DB_REVISION: master" not in job
