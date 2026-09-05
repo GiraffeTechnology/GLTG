@@ -197,3 +197,100 @@ def test_non_ascii_auth_bytes_fail_closed_before_calculation_or_persistence(
     }
     assert pipeline_calls == 0
 
+
+@pytest.mark.parametrize(
+    ("path", "payload"),
+    [
+        ("/v2/paths/enumerate", {"simulations": [_payload()]}),
+        ("/v2/reforecast", _payload(events=[])),
+    ],
+)
+def test_non_ascii_auth_bytes_fail_closed_on_each_remaining_v2_route(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    path: str,
+    payload: dict[str, object],
+) -> None:
+    """Use valid route bodies so request validation cannot mask authentication."""
+
+    calls = {
+        "simulation_pipeline": 0,
+        "reforecast_pipeline": 0,
+        "database": 0,
+        "persistence": 0,
+        "provider_or_engine": 0,
+    }
+
+    def forbidden(name: str):
+        def _fail(*args: object, **kwargs: object) -> None:
+            calls[name] += 1
+            raise AssertionError(f"{name} must not run before authentication")
+
+        return _fail
+
+    monkeypatch.setattr("gltg.api.routes.run_simulation", forbidden("simulation_pipeline"))
+    monkeypatch.setattr("gltg.api.routes.run_reforecast", forbidden("reforecast_pipeline"))
+    monkeypatch.setattr("gltg.services.v2_pipeline._client_from_env", forbidden("database"))
+    monkeypatch.setattr("gltg.services.v2_pipeline.persist_run", forbidden("persistence"))
+    monkeypatch.setattr(
+        "gltg.services.v2_pipeline.gltg_evaluator.evaluate",
+        forbidden("provider_or_engine"),
+    )
+
+    encoded_payload = json.dumps(payload).encode("utf-8")
+    messages: list[dict[str, object]] = []
+    request_sent = False
+
+    async def receive() -> dict[str, object]:
+        nonlocal request_sent
+        if request_sent:
+            return {"type": "http.disconnect"}
+        request_sent = True
+        return {"type": "http.request", "body": encoded_payload, "more_body": False}
+
+    async def send(message: dict[str, object]) -> None:
+        messages.append(message)
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.3"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode("ascii"),
+        "query_string": b"",
+        "headers": [
+            (b"host", b"testserver"),
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(encoded_payload)).encode("ascii")),
+            (b"x-service-tenant-id", TENANT.encode("ascii")),
+            (b"x-service-auth", b"invalid-\xff-auth"),
+        ],
+        "client": ("127.0.0.1", 12345),
+        "server": ("127.0.0.1", 8090),
+        "root_path": "",
+    }
+    asyncio.run(app(scope, receive, send))
+
+    start = next(message for message in messages if message["type"] == "http.response.start")
+    body = b"".join(
+        message.get("body", b"")
+        for message in messages
+        if message["type"] == "http.response.body"
+    )
+    assert start["status"] == 401
+    assert json.loads(body) == {
+        "error": "CALLER_AUTH_INVALID",
+        "code": "CALLER_AUTH_INVALID",
+    }
+    assert calls == {
+        "simulation_pipeline": 0,
+        "reforecast_pipeline": 0,
+        "database": 0,
+        "persistence": 0,
+        "provider_or_engine": 0,
+    }
+    assert "invalid-" not in caplog.text
+    assert INBOUND_SECRET not in caplog.text
+
