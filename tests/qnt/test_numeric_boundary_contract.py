@@ -199,9 +199,15 @@ def test_rfc8785_rejects_non_json_values(value) -> None:
         rfc8785_bytes(value)
 
 
-def test_rfc8785_rejects_non_binary64_safe_integer() -> None:
+def test_rfc8785_accepts_exact_binary64_integer_above_safe_distinctness_range() -> None:
+    assert rfc8785_bytes(2**53) == b"9007199254740992"
+
+
+def test_rfc8785_rejects_integer_not_exactly_representable_as_binary64() -> None:
     with pytest.raises(CanonicalizationError, match="binary64"):
-        rfc8785_bytes(2**53)
+        rfc8785_bytes(2**53 + 1)
+    with pytest.raises(ValidationError, match="binary64"):
+        QuantileProfileDocument(**_profile_values(p90_days=2**53 + 1))
 
 
 def test_post_resolution_projection_is_closed_and_excludes_volatile_metadata() -> None:

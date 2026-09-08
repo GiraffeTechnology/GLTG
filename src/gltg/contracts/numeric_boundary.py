@@ -44,9 +44,6 @@ POST_RESOLUTION_NUMERIC_INPUT_FIELDS = (
     "source_observation_ids",
     "constraints",
 )
-_MAX_EXACT_INTEGER = 2**53 - 1
-
-
 class CanonicalizationError(ValueError):
     """Raised when a value cannot be represented by the RFC 8785 boundary."""
 
@@ -55,9 +52,15 @@ def _number(value: int | float) -> str:
     if isinstance(value, bool):
         raise CanonicalizationError("boolean is not a JSON number")
     if isinstance(value, int):
-        if abs(value) > _MAX_EXACT_INTEGER:
+        try:
+            binary64 = float(value)
+        except OverflowError as exc:
+            raise CanonicalizationError(
+                "integer is not exactly representable as binary64"
+            ) from exc
+        if not math.isfinite(binary64) or int(binary64) != value:
             raise CanonicalizationError("integer is not exactly representable as binary64")
-        return str(value)
+        return _number(binary64)
     if not math.isfinite(value):
         raise CanonicalizationError("non-finite JSON number")
     if value == 0:
@@ -134,6 +137,11 @@ class QuantileProfileDocument(BaseModel):
     def _reject_boolean(cls, value: Any) -> Any:
         if isinstance(value, bool):
             raise ValueError("quantiles must be JSON numbers, not booleans")
+        if isinstance(value, int):
+            try:
+                _number(value)
+            except CanonicalizationError as exc:
+                raise ValueError(str(exc)) from exc
         return value
 
     @model_validator(mode="after")
