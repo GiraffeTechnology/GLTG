@@ -3,7 +3,9 @@ from __future__ import annotations
 import copy
 import hashlib
 import importlib
+import json
 import math
+import subprocess
 
 import pytest
 from pydantic import ValidationError
@@ -202,6 +204,73 @@ def test_rfc8785_rejects_non_json_values(value) -> None:
 
 def test_rfc8785_accepts_exact_binary64_integer_above_safe_distinctness_range() -> None:
     assert rfc8785_bytes(2**53) == b"9007199254740992"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (1e16, b"10000000000000000"),
+        (math.nextafter(1e16, -math.inf), b"9999999999999998"),
+        (math.nextafter(1e16, math.inf), b"10000000000000002"),
+        (1e20, b"100000000000000000000"),
+        (math.nextafter(1e20, -math.inf), b"99999999999999980000"),
+        (math.nextafter(1e20, math.inf), b"100000000000000020000"),
+    ],
+)
+def test_integral_binary64_values_preserve_significant_zeroes(
+    value: float, expected: bytes
+) -> None:
+    assert rfc8785_bytes(value) == expected
+
+
+def test_large_integral_quantile_documents_have_distinct_canonical_hashes() -> None:
+    values = [
+        math.nextafter(1e20, -math.inf),
+        1e20,
+        math.nextafter(1e20, math.inf),
+    ]
+    documents = [
+        QuantileProfileDocument(
+            **_profile_values(p50_days=value, p80_days=value, p90_days=value)
+        )
+        for value in values
+    ]
+    canonical = [rfc8785_bytes(item.model_dump(mode="json")) for item in documents]
+    digests = [quantile_canonical_sha256(item) for item in documents]
+    assert len(set(canonical)) == len(values)
+    assert len(set(digests)) == len(values)
+
+
+def test_number_serialization_matches_node_json_stringify_at_boundaries() -> None:
+    values = [
+        0.0,
+        -0.0,
+        5e-324,
+        1e-7,
+        math.nextafter(1e-6, 0.0),
+        1e-6,
+        math.nextafter(1e-6, math.inf),
+        math.nextafter(1e16, -math.inf),
+        1e16,
+        math.nextafter(1e16, math.inf),
+        math.nextafter(1e20, -math.inf),
+        1e20,
+        math.nextafter(1e20, math.inf),
+        math.nextafter(1e21, 0.0),
+        1e21,
+        math.nextafter(1e21, math.inf),
+        1.2345678901234567,
+        333333333.3333333,
+    ]
+    script = "const xs=JSON.parse(process.argv[1]);process.stdout.write(JSON.stringify(xs.map(JSON.stringify)))"
+    completed = subprocess.run(
+        ["node", "-e", script, json.dumps(values, separators=(",", ":"))],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    expected = json.loads(completed.stdout)
+    assert [rfc8785_bytes(value).decode() for value in values] == expected
 
 
 def test_rfc8785_rejects_integer_not_exactly_representable_as_binary64() -> None:
