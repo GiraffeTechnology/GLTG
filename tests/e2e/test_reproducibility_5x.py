@@ -22,11 +22,38 @@ def five_results():
         participants=participants,
         requested_date=date(2026, 12, 31),
     )
+    order.evaluation_date = date(2026, 1, 1)
     engine = LeadTimeGraphEngine()
     return [engine.evaluate(order) for _ in range(5)]
 
 
 class TestReproducibility5x:
+
+    def test_explicit_evaluation_date_ignores_future_wall_clock(self, monkeypatch):
+        """A fixed scenario anchor must not drift with the machine's current date."""
+        participants = [make_participant(f"P{i}") for i in range(1, 4)]
+        order = make_order(
+            order_id="REPRO-CLOCK-001",
+            quantity=2000,
+            participants=participants,
+            requested_date=date(2026, 12, 31),
+        )
+        order.evaluation_date = date(2026, 1, 1)
+        baseline = LeadTimeGraphEngine().evaluate(order)
+
+        class FutureDate(date):
+            @classmethod
+            def today(cls):
+                return cls(2099, 1, 1)
+
+        monkeypatch.setattr("gltg.engine.date", FutureDate)
+        future_clock = LeadTimeGraphEngine().evaluate(order)
+
+        assert future_clock.status == baseline.status == FeasibilityStatus.FEASIBLE
+        assert future_clock.commitable_date == baseline.commitable_date
+        assert [option.commitable_date for option in future_clock.options] == [
+            option.commitable_date for option in baseline.options
+        ]
 
     def test_5x_same_status(self, five_results):
         """All 5 runs must return the same FeasibilityStatus."""

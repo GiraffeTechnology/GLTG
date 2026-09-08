@@ -20,23 +20,27 @@ def engine():
 @pytest.fixture
 def three_participant_order():
     participants = [make_participant(f"P{i}") for i in range(1, 4)]
-    return make_order(
+    order = make_order(
         order_id="INT-PKT-001",
         quantity=3000,
         participants=participants,
         requested_date=date(2026, 12, 31),
     )
+    order.evaluation_date = date(2026, 1, 1)
+    return order
 
 
 @pytest.fixture
 def two_participant_order():
     participants = [make_participant(f"P{i}") for i in range(1, 3)]
-    return make_order(
+    order = make_order(
         order_id="INT-PKT-002",
         quantity=2000,
         participants=participants,
         requested_date=date(2026, 12, 31),
     )
+    order.evaluation_date = date(2026, 1, 1)
+    return order
 
 
 class TestDeliveryFeasibilityPacket:
