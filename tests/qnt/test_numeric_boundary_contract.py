@@ -151,6 +151,7 @@ def test_binary64_boundary_vectors(quantiles: tuple[float, float, float], expect
         {"p50_days": float("nan")},
         {"p90_days": float("inf")},
         {"p50_days": True},
+        {"p50_days": "58"},
     ],
 )
 def test_invalid_quantile_values_fail_closed(changes: dict) -> None:

@@ -135,8 +135,8 @@ class QuantileProfileDocument(BaseModel):
     @field_validator("p50_days", "p80_days", "p90_days", mode="before")
     @classmethod
     def _reject_boolean(cls, value: Any) -> Any:
-        if isinstance(value, bool):
-            raise ValueError("quantiles must be JSON numbers, not booleans")
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("quantiles must be JSON numbers")
         if isinstance(value, int):
             try:
                 _number(value)
