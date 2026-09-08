@@ -68,7 +68,9 @@ def _number(value: int | float) -> str:
     absolute = abs(value)
     decimal = Decimal(repr(value))
     if 1e-6 <= absolute < 1e21:
-        rendered = format(decimal, "f").rstrip("0").rstrip(".")
+        rendered = format(decimal, "f")
+        if "." in rendered:
+            rendered = rendered.rstrip("0").rstrip(".")
         return rendered or "0"
     mantissa, exponent = format(decimal.normalize(), "e").split("e")
     mantissa = mantissa.rstrip("0").rstrip(".")
