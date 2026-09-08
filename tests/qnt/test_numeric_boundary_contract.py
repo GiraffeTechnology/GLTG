@@ -7,7 +7,9 @@ def test_quantile_numeric_boundary_entrypoint_exists() -> None:
     try:
         module = importlib.import_module("gltg.contracts.numeric_boundary")
     except ModuleNotFoundError as exc:
-        assert False, (
+        if exc.name != "gltg.contracts.numeric_boundary":
+            raise
+        raise AssertionError(
             "QNT_NUMERIC_BOUNDARY_ENTRYPOINT_MISSING: "
             "gltg.contracts.numeric_boundary must be implemented"
         ) from exc
