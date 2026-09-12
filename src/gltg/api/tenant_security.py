@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import os
-import secrets
 from collections.abc import Iterable
+
+from gltg.api.secure_compare import secure_compare_str
 
 
 class InboundIdentityError(Exception):
@@ -39,7 +40,7 @@ def require_tenant_identity(
     expected_secret = os.environ.get("GLTG_INBOUND_SERVICE_AUTH_SECRET", "").strip()
     if not expected_secret:
         raise InboundIdentityError("CALLER_AUTH_UNAVAILABLE", 503)
-    if not secrets.compare_digest(supplied_secret, expected_secret):
+    if not secure_compare_str(supplied_secret, expected_secret):
         raise InboundIdentityError("CALLER_AUTH_INVALID", 401)
 
     if any(body_tenant != tenant_id for body_tenant in tenant_ids):

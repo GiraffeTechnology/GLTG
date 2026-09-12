@@ -1,217 +1,121 @@
-# GLTG — Behavioral + Statistical Lead-Time Graph
+# GLTG — Industrial Lead-Time Intelligence Engine
 
-`Python 3.11+` | `Current package: GLTG v1.0.0` | `Active model: gltg-hybrid-v0.1.0` | `FastAPI` | `Deterministic Engine`
+`Python 3.11+` | `GLTG v1.0.0` | `FastAPI` | `Lead-Time Simulation` | `P50/P80/P90`
 
-GLTG is the Giraffe Technology lead-time intelligence engine for apparel and textile execution.
+## Product Positioning
 
-It answers not only **how many days**, but also **how confident we are**, **which behavior changed the forecast**, **whether a fallback supplier is needed**, and **whether human review is required**.
+GLTG is Giraffe Technology's industrial lead-time intelligence engine.
+
+It evolved from a simple Lead Time Graph into a delivery risk prediction and simulation engine for industrial execution workflows.
+
+This repository follows:
+
+**PRD v2.0 Product Scope Reset — GLTG Industrial Lead-Time Intelligence Engine**
+
+See GitHub Issue #12 for the frozen product baseline.
 
 ---
 
-## Implementation Status (audited — Stage 3)
+## Previous PRD Definition
 
-Statuses: **implemented** (tested, executable), **experimental** (works, opt-in,
-not production-validated), **planned**, **not implemented**.
+Original positioning:
 
-| Layer | Status |
-|---|---|
-| v1 HTTP API (estimate / paths / reforecast) | implemented (deterministic graph engine) |
-| v2 `/v2/lead-time/simulate` | implemented — deterministic rule engine is the default; every nonzero adjustment is explained |
-| v2 `/v2/paths/enumerate` | implemented (ranks per-supplier simulations; never invents suppliers) |
-| v2 `/v2/reforecast` | implemented (applies typed events; discloses previous quantiles, delta, changed components) |
-| giraffe-db evidence retrieval (supplier record + behavior summary, tenant-scoped, fail-closed) | implemented — explicit opt-in per request (`evidence.use_giraffe_db`) |
-| giraffe-db run persistence (`gltg_simulation_runs`) | implemented — opt-in (`GLTG_PERSIST_RUNS`), truthful `persistence.status` |
-| Statistical baseline | partial — caller-supplied historical P50/P80/P90 is consumed; category/route/pair baseline retrieval is planned |
-| LLM-assisted evaluation (`GLTG_EVALUATOR_MODE=llm`) | experimental — strictly explicit opt-in; never the default; never silent |
-| ML / Bayesian calibration | not implemented (`calibration_version="none"`) |
+```
+GLTG = Lead Time Graph
+```
 
-Production-readiness caveats are tracked in
-`docs/stage3/STAGE3_FINAL_VALIDATION.md`. Model accuracy has **not** been
-validated against real transaction data — all validation used the synthetic
-`GDB_SYN_V1` dataset, and outputs based on it must not be represented as real
-history.
+Original objectives:
+
+- Calculate delivery cycles based on supply chain nodes;
+- Output order delivery feasibility.
+
+---
+
+## Current Product Scope
+
+GLTG is responsible for:
+
+- Delivery time simulation;
+- Risk prediction;
+- Supply chain path comparison;
+- Behavioral factor adjustment;
+- Delivery scenario explanation.
+
+GLTG is not responsible for:
+
+- Workflow execution;
+- Commercial approval;
+- Raw language understanding;
+- Order fact management.
 
 ---
 
 ## System Boundary
 
-```text
-giraffe-language-skill = canonical English language boundary
-giraffe-db             = private business facts and source evidence
-GLTG                   = lead-time simulation and risk forecast
-GPM                    = procurement graph reasoning
-AIVAN / giraffe-agent  = execution workflow and human approval
+```
+Canonical Order Data
+        ↓
+      GLTG
+        ↓
+Lead-Time Simulation
+        ↓
+Risk / Scenario Output
+        ↓
+Aivan Execution Layer
 ```
 
-GLTG does not own channel connectivity, multilingual extraction, RFQ/project state, private database ownership, QC inference, outbound messages, or legal/commercial approval.
+Component ownership:
+
+- GLTG = lead-time intelligence
+- giraffe-db = business facts and evidence
+- Aivan = execution workflow
+- Human operator = commercial decision
 
 ---
 
-## P0 Language Boundary
+## Core Capability
 
-Standard English is the only internal working language across Giraffe products.
+GLTG provides:
 
-GLTG must consume canonical English structured payloads. It must not extract business facts directly from raw multilingual buyer, supplier, or operator messages.
-
-Input path:
-
-```text
-raw multilingual text
--> giraffe-language-skill
--> canonical English business packet
--> giraffe-db evidence / AIVAN request builder
--> GLTG simulation
 ```
-
-GLTG may preserve language metadata and source observation IDs, but lead-time simulation must run on canonical structured fields.
-
----
-
-## Core Model Concept
-
-GLTG v2 models total planning lead time as:
-
-```text
-Total Planning Lead Time
-= Base Lead-Time Distribution
-+ Behavioral Central Shift
-+ Behavioral Uncertainty Inflation
-+ Fallback / Risk Guardrails
-```
-
-Expanded planning model:
-
-```text
-T_total
-= T_requirement_confirmation
-+ T_supplier_response
-+ T_quote_confirmation
-+ T_material_procurement
-+ T_production
-+ T_qc
-+ T_logistics
-+ T_buyer_decision
-+ T_risk_buffer
-```
-
-Distributional output:
-
-```text
 P50 = median planning lead time
 P80 = conservative planning lead time
 P90 = high-confidence planning lead time
 ```
 
----
+It explains:
 
-## Target Model Architecture
-
-```text
-Canonical RFQ / Quote / PO / Communication Events
-        │
-        ├── giraffe-db behavior materialization
-        │       ├── behavior_observations
-        │       ├── buyer_behavior_feature_snapshots
-        │       ├── supplier_behavior_feature_snapshots
-        │       └── buyer_supplier_behavior_metrics
-        │
-        ├── Statistical Baseline
-        │       ├── category / route / quantity baseline
-        │       ├── supplier historical baseline
-        │       ├── buyer-supplier pair baseline
-        │       └── leadtime_observations
-        │
-        ├── Behavioral Adjustment Layer
-        │       ├── supplier response delay anomaly
-        │       ├── quote completeness
-        │       ├── revision behavior
-        │       ├── upstream dependency signal
-        │       ├── current load signal
-        │       ├── buyer decision delay
-        │       └── buyer requirement volatility
-        │
-        ├── Hybrid Quantile Composer
-        │       ├── P50
-        │       ├── P80
-        │       └── P90
-        │
-        ├── Explainable Fallback Guard
-        │       ├── missing baseline handling
-        │       ├── missing behavior handling
-        │       ├── monotonic quantile repair
-        │       └── manual review triggers
-        │
-        └── Persisted GLTG run
-                ├── gltg_run_id
-                ├── model_version
-                ├── rule_version
-                ├── explanation_json
-                └── source_observation_ids
-```
+- Why delivery risk changed;
+- Which supplier or buyer behavior affected forecast;
+- Whether fallback suppliers are required;
+- Whether human review is required.
 
 ---
 
-## Behavioral Feature Inputs
+## v1.0 Frozen Delivery Scope
 
-Supplier features:
+Must complete:
 
-```text
-response_delay_ratio
-business_hours_delay_ratio
-quote_completeness_score
-missing_quote_fields
-quote_revision_count
-lead_time_revision_count
-upstream_confirmation_signal
-supplier_current_load_signal
-historical_on_time_delivery_rate
-historical_quoted_vs_actual_error_days
-lead_time_confidence_score
-```
-
-Buyer features:
-
-```text
-requirement_change_count
-requirement_volatility_score
-buyer_decision_delay_score
-buyer_response_delay_ratio
-price_negotiation_intensity
-historical_rounds_to_po
-conversion_probability
-```
-
-Buyer-supplier pair features:
-
-```text
-pair_conversion_rate
-avg_rounds_to_po
-avg_supplier_response_seconds
-avg_buyer_response_seconds
-relationship_strength_score
-recommended_pairing_score
-dispute_count
-quality_issue_count
-on_time_delivery_rate
-```
-
-Behavior signals are risk signals, not hard facts. High-impact adjustments must be explained in `explanation_json`.
+1. Lead-Time Simulation
+2. P50/P80/P90 output
+3. Risk Explanation
+4. Scenario Comparison
+5. Aivan API Integration
 
 ---
 
-## API
+## Prohibited Scope Expansion
 
-```text
-GET  /health      # process alive
-GET  /ready       # dependency readiness (evaluator mode, giraffe-db) — no secrets
-GET  /version
-POST /v1/lead-time/estimate
-POST /v1/paths/enumerate
-POST /v1/reforecast
-POST /v2/lead-time/simulate
-POST /v2/paths/enumerate
-POST /v2/reforecast
-```
+During v1.0, do not add:
+
+- Generic AI Agent capabilities;
+- Workflow control layer;
+- Commercial transaction system;
+- Unvalidated ML/Bayesian model replacement of the deterministic engine.
+
+---
+
+## Running the Service
 
 Run service:
 
@@ -281,101 +185,14 @@ source_observation_ids
 
 ---
 
-## Supplier Count Rules
+## Core Principle
 
-GLTG must never crash or invent suppliers to fill comparison slots.
+All future development must:
 
-| Supplier count | Behavior |
-|---:|---|
-| `0` | Return infeasible result with `NO_SUPPLIERS`; no crash. |
-| `1` | Calculate with limited-comparison warning. |
-| `2` | Calculate with limited-supplier-pool warning. |
-| `3+` | Run normal comparison and path enumeration. |
-
----
-
-## Tests
-
-Current tests:
-
-```bash
-pytest
-python scripts/verify_gltg_5x.py
-python scripts/run_zero_one_two_supplier_cases.py
-python scripts/run_10000_shirts_acceptance.py
-python scripts/run_api_edge_cases.py
-python scripts/validate_gltg_giraffe_db_e2e.py   # requires a giraffe-db checkout
-```
-
-Stage 3 invariant/property/integration tests live under `tests/stage3/`:
-quantile monotonicity, non-negative days, confidence bounds, determinism
-(same input + same versions = identical output), 0/1/2/3+ supplier behavior,
-monotone response to worsening evidence, v2 response contract, giraffe-db
-auth/tenant/timeout behavior, truthful persistence status, and typed
-reforecast events. The rule inventory is
-`docs/stage3/gltg_rule_inventory.json`.
-
----
-
-## Acceptance Criteria
-
-Status per Stage 3 validation (`docs/stage3/STAGE3_FINAL_VALIDATION.md`):
-
-1. v1 endpoints remain working — **met**.
-2. v2 contract exists in code and docs — **met**.
-3. behavior-aware payload parsing works — **met**.
-4. deterministic MVP behavior rules work (and are the default) — **met**.
-5. P50/P80/P90, components, risk, warnings, and explanation JSON are returned — **met**.
-6. monotonic quantile repair is enforced — **met** (tested invariant).
-7. missing baseline or missing behavior data produces warnings — **met**.
-8. source observation IDs and GLTG run IDs are preserved — **met** (never invented).
-9. AIVAN and giraffe-agent can select v1 or v2 without local fallback — consumer-side, unverified here.
-10. LLMs do not replace GLTG calculations — **met**: the deterministic engine is the default; LLM mode is explicit opt-in only.
-
----
-
-## Install
-
-```bash
-git clone https://github.com/GiraffeTechnology/GLTG.git
-cd GLTG
-python -m pip install -e ".[dev]"
-```
-
-API-only runtime:
-
-```bash
-python -m pip install -e ".[api]"
-```
-
-Docker:
-
-```bash
-docker build -t giraffe-gltg .
-docker run -p 8090:8090 giraffe-gltg
-```
-
----
-
-## Final Product Principle
-
-GLTG must not answer only:
-
-```text
-How many days?
-```
-
-It must answer:
-
-```text
-How many days at P50 / P80 / P90?
-Why?
-Which buyer/supplier behavior changed the forecast?
-How confident are we?
-Do we need a fallback supplier?
-Do we need manual review?
-Should pricing add risk buffer?
-```
+1. Map to the PRD scope;
+2. Have explicit Acceptance Criteria;
+3. Move toward production-ready delivery;
+4. Not use algorithmic complexity as a substitute for delivery.
 
 ---
 
