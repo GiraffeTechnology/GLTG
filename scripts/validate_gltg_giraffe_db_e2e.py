@@ -74,6 +74,7 @@ def main() -> int:
     db_path = Path(tmpdir.name) / "giraffe_db_e2e.sqlite3"
     database_url = f"sqlite+pysqlite:///{db_path}"
     gdb_secret = secrets.token_hex(16)
+    inbound_secret = secrets.token_hex(16)
 
     gdb_env = {
         **os.environ,
@@ -111,6 +112,7 @@ def main() -> int:
         **os.environ,
         "GLTG_GIRAFFE_DB_BASE_URL": gdb_base,
         "GLTG_GIRAFFE_DB_SERVICE_AUTH_SECRET": gdb_secret,
+        "GLTG_INBOUND_SERVICE_AUTH_SECRET": inbound_secret,
         "GLTG_PERSIST_RUNS": "true",
     }
     gltg_proc = subprocess.Popen(
@@ -140,6 +142,10 @@ def main() -> int:
         },
         "evidence": {"use_giraffe_db": True},
         "source_observation_ids": [],
+    }
+    gltg_headers = {
+        "X-Service-Auth": inbound_secret,
+        "X-Service-Tenant-ID": TENANT,
     }
 
     try:
@@ -177,7 +183,11 @@ def main() -> int:
             )
 
             # The central chain: GLTG v2 with live giraffe-db evidence.
-            response = client.post(f"{gltg_base}/v2/lead-time/simulate", json=payload)
+            response = client.post(
+                f"{gltg_base}/v2/lead-time/simulate",
+                json=payload,
+                headers=gltg_headers,
+            )
             body = response.json() if response.status_code == 200 else {}
             check("GLTG v2 simulate with evidence is 200", response.status_code == 200)
             quantiles = body.get("quantiles", {})
@@ -229,7 +239,11 @@ def main() -> int:
             )
 
             # Determinism of the calculation across repeated calls.
-            body2 = client.post(f"{gltg_base}/v2/lead-time/simulate", json=payload).json()
+            body2 = client.post(
+                f"{gltg_base}/v2/lead-time/simulate",
+                json=payload,
+                headers=gltg_headers,
+            ).json()
             check(
                 "repeated call: identical run id, quantiles and risk",
                 body2.get("gltg_run_id") == body.get("gltg_run_id")
@@ -241,6 +255,10 @@ def main() -> int:
             wrong = client.post(
                 f"{gltg_base}/v2/lead-time/simulate",
                 json={**payload, "request_id": "E2E-GDB-WT", "tenant_id": WRONG_TENANT},
+                headers={
+                    "X-Service-Auth": inbound_secret,
+                    "X-Service-Tenant-ID": WRONG_TENANT,
+                },
             )
             wrong_body = wrong.json()
             check(
@@ -256,6 +274,7 @@ def main() -> int:
                 bad = client.post(
                     f"{gltg_badauth_base}/v2/lead-time/simulate",
                     json={**payload, "request_id": "E2E-GDB-BAD"},
+                    headers=gltg_headers,
                 )
                 check(
                     "wrong GLTG service secret fails closed (502 EVIDENCE_AUTH_FAILED)",
@@ -273,6 +292,7 @@ def main() -> int:
                     "order": {"product_type": "t-shirt", "quantity": 10000, "deadline_days": 2},
                     "constraints": {"manual_review_policy": "required_if_deadline_tight"},
                 },
+                headers=gltg_headers,
             ).json()
             check(
                 "impossible deadline: infeasible + high risk + manual review",
@@ -292,6 +312,7 @@ def main() -> int:
                         {"event_type": "logistics_disruption", "freight_space_risk": 0.9},
                     ],
                 },
+                headers=gltg_headers,
             ).json()
             check(
                 "reforecast applies events and discloses previous vs new quantiles",
@@ -308,6 +329,7 @@ def main() -> int:
             down = client.post(
                 f"{gltg_base}/v2/lead-time/simulate",
                 json={**payload, "request_id": "E2E-GDB-DOWN"},
+                headers=gltg_headers,
             )
             check(
                 "giraffe-db down: explicit 503 DB_UNAVAILABLE (no silent fallback)",

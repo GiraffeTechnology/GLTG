@@ -15,10 +15,11 @@ def _codes(res) -> set[str]:
 def test_valid_packet_passes(make_request):
     res = evaluate(make_request())
     assert res.ok is True
-    assert res.evaluation_mode == "llm"
-    assert res.model_provider == "mock"
+    assert res.evaluation_mode == "deterministic_with_llm_auxiliary"
+    assert res.model_provider == "deterministic_rules"
+    assert res.explanation_json["llm_auxiliary"]["provider"] == "mock"
     assert res.assessment_schema_version == "gltg-assessment-v1"
-    assert res.manual_review_required is False
+    assert res.manual_review_required == res.risk.manual_review_required
     # Packet round-trips through the typed schema.
     packet = GLTGAssessmentPacket.model_validate(res.assessment_packet)
     assert packet.lead_time_risk_assessment.p50_days <= packet.lead_time_risk_assessment.p80_days
@@ -43,16 +44,18 @@ def test_timeout_triggers_manual_review_without_fallback(make_request, monkeypat
     res = evaluate(make_request())
     assert res.manual_review_required is True
     # The stub is honestly labeled: no model ran, so the mode is not "llm".
-    assert res.evaluation_mode == "manual_review"
+    assert res.evaluation_mode == "deterministic_with_llm_unavailable"
     assert "EVALUATOR_UNAVAILABLE" in _codes(res)
 
 
-def test_timeout_uses_fallback_when_allowed(make_request, monkeypatch):
+def test_timeout_never_changes_canonical_boundary_when_legacy_fallback_allowed(
+    make_request, monkeypatch
+):
     monkeypatch.setenv("GLTG_MOCK_SCENARIO", "timeout")
     monkeypatch.setenv("GLTG_ALLOW_RULE_FALLBACK", "true")
     res = evaluate(make_request())
-    assert res.evaluation_mode == "fallback"
-    assert "LLM_PROVIDER_UNAVAILABLE_RULE_FALLBACK_USED" in _codes(res)
+    assert res.evaluation_mode == "deterministic_with_llm_unavailable"
+    assert "EVALUATOR_UNAVAILABLE" in _codes(res)
 
 
 def test_confirmed_without_evidence_is_downgraded(make_request, monkeypatch):
@@ -64,12 +67,13 @@ def test_confirmed_without_evidence_is_downgraded(make_request, monkeypatch):
     assert "CONFIRMED_WITHOUT_EVIDENCE_DOWNGRADED" in _codes(res)
 
 
-def test_p90_less_than_p80_is_repaired(make_request, monkeypatch):
+def test_provider_p90_less_than_p80_is_ignored(make_request, monkeypatch):
     monkeypatch.setenv("GLTG_MOCK_SCENARIO", "p90_lt_p80")
     res = evaluate(make_request())
     q = res.quantiles
     assert q.p50_days <= q.p80_days <= q.p90_days
-    assert res.assessment_packet["audit"]["repaired"] is True
+    assert res.assessment_packet["lead_time_risk_assessment"]["p80_days"] == q.p80_days
+    assert res.assessment_packet["lead_time_risk_assessment"]["p90_days"] == q.p90_days
 
 
 def test_high_confidence_unknown_material_is_downgraded(make_request, monkeypatch):

@@ -20,7 +20,13 @@ from gltg.services.v2_pipeline import (
     MAX_EVIDENCE_CONFIDENCE_PENALTY,
 )
 
-client = TestClient(app)
+client = TestClient(
+    app,
+    headers={
+        "X-Service-Auth": "test-inbound-secret",
+        "X-Service-Tenant-ID": "tenant-demo",
+    },
+)
 BASE = "http://giraffe-db.test"
 SUPPLIER_ID = "GDB_SYN_V1_SUP_000001"
 TENANT = "tenant-demo"
@@ -36,6 +42,7 @@ SUPPLIER_RECORD = {
 }
 HEALTHY_SUMMARY = {
     "supplier_id": SUPPLIER_ID,
+    "tenant_id": TENANT,
     "observation_count": 12,
     "latest_snapshot": {
         "snapshot_id": "GDB_SYN_V1_SUPFEAT_000001",
@@ -96,7 +103,14 @@ DEGRADED_CASES = {
         "malformed_payload",
     ),
     "missing_required_fields": (
-        httpx.Response(200, json={"supplier_id": SUPPLIER_ID, "latest_snapshot": None}),
+        httpx.Response(
+            200,
+            json={
+                "supplier_id": SUPPLIER_ID,
+                "tenant_id": TENANT,
+                "latest_snapshot": None,
+            },
+        ),
         "malformed_payload",
     ),
     "empty_summary": (
@@ -104,6 +118,7 @@ DEGRADED_CASES = {
             200,
             json={
                 "supplier_id": SUPPLIER_ID,
+                "tenant_id": TENANT,
                 "observation_count": 0,
                 "latest_snapshot": None,
                 "response_delay": {"response_delay_ratio": None},

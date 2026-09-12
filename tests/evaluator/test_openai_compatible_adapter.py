@@ -102,6 +102,7 @@ def test_orchestrator_end_to_end_with_openai_compatible(make_request, monkeypatc
         )
     )
     res = evaluate(make_request())
-    assert res.evaluation_mode == "llm"
-    assert res.model_provider == "openai_compatible"
+    assert res.evaluation_mode == "deterministic_with_llm_auxiliary"
+    assert res.model_provider == "deterministic_rules"
+    assert res.explanation_json["llm_auxiliary"]["provider"] == "openai_compatible"
     assert res.quantiles.p50_days <= res.quantiles.p80_days <= res.quantiles.p90_days

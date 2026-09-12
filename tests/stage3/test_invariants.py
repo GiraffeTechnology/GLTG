@@ -11,7 +11,13 @@ from gltg.api.main import app
 from gltg.behavioral.schemas import GLTGOrderInputV2, GLTGSimulationRequestV2
 from gltg.behavioral.simulator import BehavioralLeadTimeSimulator
 
-client = TestClient(app)
+client = TestClient(
+    app,
+    headers={
+        "X-Service-Auth": "test-inbound-secret",
+        "X-Service-Tenant-ID": "tenant-a",
+    },
+)
 _simulator = BehavioralLeadTimeSimulator()
 
 

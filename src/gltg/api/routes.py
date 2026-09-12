@@ -3,23 +3,24 @@
 from __future__ import annotations
 
 import os
+from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header
 
 from ..behavioral.schemas import (
-    GLTGPathV2,
     GLTGPathsEnumerateRequestV2,
     GLTGPathsEnumerateResponseV2,
+    GLTGPathV2,
     GLTGReforecastRequestV2,
     GLTGReforecastResponseV2,
     GLTGSimulationRequestV2,
     GLTGSimulationResponseV2,
 )
 from ..evaluator.config import load_settings
-from ..integrations.giraffe_db_client import client_from_env
-from ..version import __version__
+from ..integrations.giraffe_db_client import GiraffeDBNotConfigured, client_from_env
 from ..services import engine_adapter
 from ..services.v2_pipeline import run_reforecast, run_simulation
+from ..version import __version__
 from .schemas import (
     HealthResponse,
     LeadTimeEstimateRequest,
@@ -30,6 +31,7 @@ from .schemas import (
     ReforecastResponse,
     VersionResponse,
 )
+from .tenant_security import require_tenant_identity
 
 router = APIRouter()
 
@@ -52,12 +54,20 @@ def ready() -> dict:
     configured evaluation mode and optional giraffe-db dependency are usable.
     """
     settings = load_settings()
-    client = client_from_env()
-    giraffe_db_status = "not_configured"
+    try:
+        client = client_from_env()
+    except GiraffeDBNotConfigured:
+        client = None
+        giraffe_db_status = "auth_not_configured"
+    else:
+        giraffe_db_status = "not_configured"
     if client is not None:
         giraffe_db_status = "ok" if client.healthz() else "unreachable"
     evaluator_ready = settings.is_deterministic_mode or settings.evaluator_mode == "llm"
-    ready_flag = evaluator_ready and giraffe_db_status != "unreachable"
+    ready_flag = evaluator_ready and giraffe_db_status not in {
+        "unreachable",
+        "auth_not_configured",
+    }
     return {
         "ready": ready_flag,
         "evaluator_mode": settings.evaluator_mode,
@@ -99,7 +109,12 @@ def reforecast(req: ReforecastRequest) -> ReforecastResponse:
     response_model=GLTGSimulationResponseV2,
     tags=["lead-time-v2"],
 )
-def simulate_lead_time_v2(req: GLTGSimulationRequestV2) -> GLTGSimulationResponseV2:
+def simulate_lead_time_v2(
+    req: GLTGSimulationRequestV2,
+    x_service_tenant_id: Annotated[str, Header(alias="X-Service-Tenant-ID")],
+    x_service_auth: Annotated[str, Header(alias="X-Service-Auth")],
+) -> GLTGSimulationResponseV2:
+    require_tenant_identity(x_service_tenant_id, x_service_auth, [req.tenant_id])
     return run_simulation(req)
 
 
@@ -108,7 +123,16 @@ def simulate_lead_time_v2(req: GLTGSimulationRequestV2) -> GLTGSimulationRespons
     response_model=GLTGPathsEnumerateResponseV2,
     tags=["paths-v2"],
 )
-def enumerate_paths_v2(req: GLTGPathsEnumerateRequestV2) -> GLTGPathsEnumerateResponseV2:
+def enumerate_paths_v2(
+    req: GLTGPathsEnumerateRequestV2,
+    x_service_tenant_id: Annotated[str, Header(alias="X-Service-Tenant-ID")],
+    x_service_auth: Annotated[str, Header(alias="X-Service-Auth")],
+) -> GLTGPathsEnumerateResponseV2:
+    require_tenant_identity(
+        x_service_tenant_id,
+        x_service_auth,
+        [sim.tenant_id for sim in req.simulations],
+    )
     paths: list[GLTGPathV2] = []
     warnings = []
     for sim_req in req.simulations:
@@ -135,5 +159,11 @@ def enumerate_paths_v2(req: GLTGPathsEnumerateRequestV2) -> GLTGPathsEnumerateRe
     response_model=GLTGReforecastResponseV2,
     tags=["reforecast-v2"],
 )
-def reforecast_v2(req: GLTGReforecastRequestV2) -> GLTGReforecastResponseV2:
+def reforecast_v2(
+    req: GLTGReforecastRequestV2,
+    x_service_tenant_id: Annotated[str, Header(alias="X-Service-Tenant-ID")],
+    x_service_auth: Annotated[str, Header(alias="X-Service-Auth")],
+) -> GLTGReforecastResponseV2:
+    require_tenant_identity(x_service_tenant_id, x_service_auth, [req.tenant_id])
     return run_reforecast(req)
+

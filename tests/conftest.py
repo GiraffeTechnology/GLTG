@@ -12,6 +12,16 @@ from gltg.models.order import ApparelOrderInput
 from gltg.models.participant import ParticipantProfile
 
 
+TEST_INBOUND_SECRET = "test-inbound-secret"
+
+
+@pytest.fixture(autouse=True)
+def _configured_inbound_service_auth(monkeypatch):
+    """Every API test uses an explicitly configured inbound trust boundary."""
+
+    monkeypatch.setenv("GLTG_INBOUND_SERVICE_AUTH_SECRET", TEST_INBOUND_SECRET)
+
+
 def make_participant(pid, ptype=ParticipantType.GARMENT_FACTORY, node_types=None):
     """Create a ParticipantProfile with capabilities for the given node types."""
     if node_types is None:
@@ -39,13 +49,20 @@ def make_participant(pid, ptype=ParticipantType.GARMENT_FACTORY, node_types=None
     )
 
 
-def make_order(order_id="TEST-001", quantity=1000, participants=None, requested_date=None):
+def make_order(
+    order_id="TEST-001",
+    quantity=1000,
+    participants=None,
+    requested_date=None,
+    evaluation_date=None,
+):
     """Create a minimal ApparelOrderInput."""
     return ApparelOrderInput(
         order_id=order_id,
         product_type="men_shirt_cotton",
         quantity=quantity,
         requested_delivery_date=requested_date,
+        evaluation_date=evaluation_date,
         dynamic_form={"fabric_type": "cotton"},
         participants=participants or [],
     )
