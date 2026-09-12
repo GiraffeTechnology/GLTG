@@ -175,6 +175,22 @@ jobs:
         if: steps.gdb.outputs.available == 'true'
         run: python scripts/validate_gltg_giraffe_db_e2e.py
 
+      # This job reports success in both cases, so the check name alone does
+      # not say whether the integration was exercised. Record the outcome in
+      # the run summary so a reviewer reading the green check can tell a real
+      # E2E pass from a skip.
+      - name: Record what this job actually verified
+        if: always()
+        run: |
+          if [ "${{ steps.gdb.outputs.available }}" = "true" ]; then
+            echo "Real HTTP E2E vs giraffe-db: EXERCISED." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Real HTTP E2E vs giraffe-db: NOT EXERCISED." >> "$GITHUB_STEP_SUMMARY"
+            echo "GIRAFFE_DB_CI_TOKEN is not configured, so the clone, install" >> "$GITHUB_STEP_SUMMARY"
+            echo "and E2E steps were skipped. This green check is not evidence" >> "$GITHUB_STEP_SUMMARY"
+            echo "of giraffe-db integration. Run scripts/validate_gltg_giraffe_db_e2e.py locally." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   docker:
     name: Docker build + startup smoke
     runs-on: ubuntu-latest
