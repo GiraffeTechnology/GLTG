@@ -1,11 +1,4 @@
-"""E2E test: Two suppliers -- graceful degradation.
-
-The example file two_suppliers.json only contains two GARMENT_FACTORY participants
-(no fabric supplier), which causes the validator to flag MISSING_FABRIC_SUPPLIER
-and the PathEnumerator to produce no options.  To reliably test the 2-participant
-rule we build the order inline using fully-capable participants that the engine
-can actually route through the graph.
-"""
+"""E2E test: two suppliers with an explicit evaluation clock."""
 
 from __future__ import annotations
 
@@ -76,11 +69,13 @@ class TestTwoSuppliersGraceful:
                 assert pid in real_ids, f"Invented participant: {pid}"
 
     def test_example_file_loads_without_crash(self):
-        """The two_suppliers.json example file (if present) must load without crash."""
+        """The fixed example verifies cardinality without wall-clock drift."""
         if not TWO_FILE.exists():
             pytest.skip(f"Example file not found: {TWO_FILE}")
         from gltg.integrations.json_io import load_order_from_json
         order = load_order_from_json(TWO_FILE)
+        order = order.model_copy(update={"evaluation_date": date(2025, 7, 1)})
         engine = LeadTimeGraphEngine()
         packet = engine.evaluate(order)
-        assert packet is not None
+        assert packet.status == FeasibilityStatus.LIMITED_OPTIONS
+        assert len(packet.options) == 2

@@ -6,10 +6,12 @@ Run from the GLTG/ directory:
 
 import sys
 import pathlib
+from datetime import date
 
 ROOT = pathlib.Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 EXAMPLES = ROOT / "examples"
+EVALUATION_DATE = date(2025, 7, 1)
 
 from gltg.integrations.json_io import load_order_from_json
 from gltg.engine import LeadTimeGraphEngine
@@ -23,6 +25,10 @@ def run_case(label: str, json_file: str, engine: LeadTimeGraphEngine):
     order_path = EXAMPLES / json_file
     print(f"Loading: {order_path}")
     order = load_order_from_json(order_path)
+    # The example deadlines are fixed. Anchor evaluation as well so this
+    # acceptance command verifies supplier-cardinality semantics instead of
+    # changing outcome as wall-clock time advances.
+    order = order.model_copy(update={"evaluation_date": EVALUATION_DATE})
     print(f"  order_id    : {order.order_id}")
     print(f"  quantity    : {order.quantity:,}")
     print(f"  participants: {len(order.participants)}")

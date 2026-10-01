@@ -1,11 +1,4 @@
-"""E2E test: One supplier -- graceful degradation.
-
-The example file one_supplier.json only contains a GARMENT_FACTORY participant
-(no fabric supplier), which causes the validator to flag MISSING_FABRIC_SUPPLIER
-and the PathEnumerator to produce no options.  To reliably test the 1-participant
-rule we build the order inline using a fully-capable participant that the engine
-can actually route through the graph.
-"""
+"""E2E test: one supplier with an explicit evaluation clock."""
 
 from __future__ import annotations
 
@@ -70,11 +63,13 @@ class TestOneSupplierGraceful:
         assert len(packet.options[0].participant_combination) >= 1
 
     def test_example_file_loads_without_crash(self):
-        """The one_supplier.json example file (if present) must load without crash."""
+        """The fixed example verifies cardinality without wall-clock drift."""
         if not ONE_FILE.exists():
             pytest.skip(f"Example file not found: {ONE_FILE}")
         from gltg.integrations.json_io import load_order_from_json
         order = load_order_from_json(ONE_FILE)
+        order = order.model_copy(update={"evaluation_date": date(2025, 7, 1)})
         engine = LeadTimeGraphEngine()
         packet = engine.evaluate(order)
-        assert packet is not None
+        assert packet.status == FeasibilityStatus.LIMITED_OPTIONS
+        assert len(packet.options) == 1
