@@ -9,6 +9,7 @@ workflow and approval state.
 | G01 | Aivan's v2 HTTP payload included a typed `assessment_scope`, but GLTG discarded the field. | GLTG | Preserve and validate the two supported scope values in `GLTGCaseContext`. | `tests/s1/test_aivan_consumer_contract.py` | Repaired locally |
 | G02 | The service boundary needed an executable guard against accidental in-process Aivan coupling. | GLTG | Add an AST-based runtime import boundary test. | `tests/s1/test_service_independence.py` | Repaired locally |
 | G03 | The existing real-service runner did not exercise Aivan's current thin HTTP client. | GLTG | Optionally invoke that client against live GLTG and giraffe-db services when `AIVAN_REPO` is supplied. | `scripts/validate_gltg_giraffe_db_e2e.py` | Repaired locally |
+| X01 | The required real HTTP CI job could report success while clone, install, and E2E steps were skipped. | GLTG | Pin the tested DB candidate and make missing credentials, checkout mismatch, installation failure, or E2E failure fail the job. | `tests/s1/test_real_giraffe_db_ci_policy.py` | Repaired locally; remote execution requires the pinned DB commit to be published |
 
 Local real-service evidence uses an isolated SQLite database created through the
 real giraffe-db migration chain. It proves the HTTP contracts and recovery

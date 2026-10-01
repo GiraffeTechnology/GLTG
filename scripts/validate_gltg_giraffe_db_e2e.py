@@ -85,6 +85,7 @@ def main() -> int:
         **os.environ,
         "GIRAFFE_DB_DATABASE_URL": database_url,
         "GIRAFFE_DB_SERVICE_AUTH_SECRET": gdb_secret,
+        "GIRAFFE_DB_SERVICE_CREDENTIALS_JSON": json.dumps({TENANT: [gdb_secret]}),
     }
 
     print("== giraffe-db: fresh DB via alembic + supplier import ==")
@@ -92,6 +93,24 @@ def main() -> int:
         [sys.executable, "-m", "alembic", "upgrade", "head"],
         check=True, cwd=gdb_repo, env=gdb_env,
     )
+    connection = sqlite3.connect(str(db_path))
+    try:
+        tenant_columns = {
+            str(row[1]) for row in connection.execute("PRAGMA table_info(tenants)")
+        }
+        if "status" in tenant_columns:
+            connection.execute(
+                "INSERT INTO tenants (id, tenant_id, name, status) VALUES (?, ?, ?, ?)",
+                (TENANT, TENANT, "GLTG isolated E2E tenant", "active"),
+            )
+        else:
+            connection.execute(
+                "INSERT INTO tenants (id, tenant_id, name) VALUES (?, ?, ?)",
+                (TENANT, TENANT, "GLTG isolated E2E tenant"),
+            )
+        connection.commit()
+    finally:
+        connection.close()
     subprocess.run(
         [
             sys.executable, "-m", "loaders.import_suppliers_to_app_db",
@@ -179,12 +198,13 @@ def main() -> int:
                     headers={"X-Service-Tenant-ID": TENANT},
                 ).status_code == 401,
             )
+            wrong_tenant_db = client.get(
+                f"{gdb_base}/api/data/suppliers/{SUPPLIER_ID}",
+                headers={"X-Service-Auth": gdb_secret, "X-Service-Tenant-ID": WRONG_TENANT},
+            )
             check(
-                "giraffe-db wrong tenant cannot read supplier (404)",
-                client.get(
-                    f"{gdb_base}/api/data/suppliers/{SUPPLIER_ID}",
-                    headers={"X-Service-Auth": gdb_secret, "X-Service-Tenant-ID": WRONG_TENANT},
-                ).status_code == 404,
+                "giraffe-db wrong tenant credential fails closed (403)",
+                wrong_tenant_db.status_code == 403,
             )
 
             # The central chain: GLTG v2 with live giraffe-db evidence.
@@ -316,7 +336,7 @@ def main() -> int:
                 and body2.get("risk") == body.get("risk"),
             )
 
-            # Wrong tenant through GLTG: isolation, explicit missing evidence.
+            # Wrong tenant through GLTG: outbound tenant-bound auth fails closed.
             wrong = client.post(
                 f"{gltg_base}/v2/lead-time/simulate",
                 json={**payload, "request_id": "E2E-GDB-WT", "tenant_id": WRONG_TENANT},
@@ -325,12 +345,10 @@ def main() -> int:
                     "X-Service-Tenant-ID": WRONG_TENANT,
                 },
             )
-            wrong_body = wrong.json()
             check(
-                "wrong tenant cannot read evidence via GLTG (explicit EVIDENCE_NOT_FOUND)",
-                wrong.status_code == 200
-                and any(w["code"] == "EVIDENCE_NOT_FOUND" for w in wrong_body.get("warnings", []))
-                and wrong_body["risk"]["manual_review_required"] is True,
+                "wrong tenant cannot read evidence via GLTG (502 EVIDENCE_AUTH_FAILED)",
+                wrong.status_code == 502
+                and wrong.json().get("code") == "EVIDENCE_AUTH_FAILED",
             )
 
             # GLTG configured with a wrong service secret must fail closed.
