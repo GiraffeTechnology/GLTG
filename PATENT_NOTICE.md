@@ -8,8 +8,8 @@ Certain workflows, business methods, system designs, data structures, lead-time 
 
 | Jurisdiction | Patent Number | Title |
 |---|---|---|
-| China | **ZL 2023 1 1645939.9 / CN 117670482 B** | 基于多方配合的C2M模式的纺织品及服装定制运营平台系统 |
-| Japan | **P7644545 / 特許第7644545号** | 協働型C2Mモデルに基づく繊維及びアパレルカスタマイズ運用プラットフォームシステム |
+| China | **ZL 2023 1 1645939.9 / CN 117670482 B** | Textile and apparel customization operation platform system based on a multi-party collaborative C2M model (English translation) |
+| Japan | **P7644545 / Japanese Patent No. 7644545** | Textile and apparel customization operation platform system based on a collaborative C2M model (English translation) |
 
 **Patent Owner:** Giraffe Technology Holding Limited
 

@@ -49,6 +49,7 @@ class GLTGCaseContext(BaseModel):
     po_id: str | None = None
     buyer_id: str | None = None
     supplier_id: str | None = None
+    assessment_scope: Literal["requirement_baseline", "supplier_candidate"] | None = None
 
 
 class GLTGOrderInputV2(BaseModel):
