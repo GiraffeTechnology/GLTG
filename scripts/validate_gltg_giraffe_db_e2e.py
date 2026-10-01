@@ -14,6 +14,11 @@ Chain (no fixtures, no monkey-patched clients, no static JSON, no mocked HTTP):
     -> persisted-run verification (direct row check in the fresh DB)
     -> tenant isolation, fail-closed auth, DB_UNAVAILABLE checks
 
+When ``AIVAN_REPO`` points to a checkout, the same run also imports Aivan's
+thin HTTP client (never its lead-time logic) and proves the continuous
+Aivan-client -> GLTG API -> giraffe-db API path. The GLTG runtime remains
+independent and never imports Aivan.
+
 Requires a giraffe-db checkout (Stage 2A or later). Default location is a
 sibling directory; override with GIRAFFE_DB_REPO.
 """
@@ -237,6 +242,66 @@ def main() -> int:
                 persistence.get("status") == "persisted" and run_row_ok,
                 json.dumps(persistence),
             )
+
+            aivan_repo_value = os.environ.get("AIVAN_REPO", "").strip()
+            if aivan_repo_value:
+                aivan_src = Path(aivan_repo_value) / "src"
+                if not (aivan_src / "aivan" / "integrations" / "gltg_client.py").exists():
+                    check("Aivan consumer checkout is usable", False, str(aivan_src))
+                else:
+                    sys.path.insert(0, str(aivan_src))
+                    previous_aivan_secret = os.environ.get("GLTG_SERVICE_AUTH_SECRET")
+                    os.environ["GLTG_SERVICE_AUTH_SECRET"] = inbound_secret
+                    try:
+                        from aivan.integrations.gltg_client import GLTGClient
+
+                        aivan_result = GLTGClient(
+                            base_url=gltg_base,
+                            timeout_seconds=15,
+                        ).simulate_lead_time_v2(
+                            {
+                                **payload,
+                                "request_id": "E2E-AIVAN-GDB-1",
+                                "source_system": "aivan",
+                                "source_trace_id": "E2E-AIVAN-TRACE-1",
+                                "case_context": {
+                                    "assessment_scope": "supplier_candidate",
+                                    "supplier_id": SUPPLIER_ID,
+                                },
+                            }
+                        )
+                    finally:
+                        if previous_aivan_secret is None:
+                            os.environ.pop("GLTG_SERVICE_AUTH_SECRET", None)
+                        else:
+                            os.environ["GLTG_SERVICE_AUTH_SECRET"] = previous_aivan_secret
+
+                    aivan_body = aivan_result.data or {}
+                    aivan_quantiles = aivan_body.get("quantiles", {})
+                    aivan_context = (
+                        aivan_body.get("assessment_packet", {}).get("case_context", {})
+                    )
+                    check(
+                        "Aivan HTTP client -> GLTG -> giraffe-db is continuous",
+                        aivan_result.ok
+                        and aivan_result.status_code == 200
+                        and (
+                            0 < aivan_quantiles.get("p50_days", 0)
+                            <= aivan_quantiles.get("p80_days", 0)
+                            <= aivan_quantiles.get("p90_days", 0)
+                        )
+                        and aivan_context.get("assessment_scope") == "supplier_candidate"
+                        and aivan_context.get("supplier_id") == SUPPLIER_ID
+                        and aivan_body.get("persistence", {}).get("status") == "persisted",
+                        json.dumps(
+                            {
+                                "status_code": aivan_result.status_code,
+                                "quantiles": aivan_quantiles,
+                                "case_context": aivan_context,
+                                "persistence": aivan_body.get("persistence", {}),
+                            }
+                        ),
+                    )
 
             # Determinism of the calculation across repeated calls.
             body2 = client.post(
