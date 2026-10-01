@@ -5,7 +5,7 @@ import importlib
 import pytest
 
 from gltg.evaluator import evaluate
-from gltg.evaluator.providers.base import ProviderUnavailable
+from gltg.evaluator.providers.base import ProviderTimeout, ProviderUnavailable
 from gltg.evaluator.providers.mock import MockGLTGProvider
 from tests.evaluator.conftest import load_request
 
@@ -30,6 +30,20 @@ class UnavailableProvider(MockGLTGProvider):
 
     def evaluate_gltg_assessment(self, **kwargs):
         raise ProviderUnavailable("provider unavailable; raw body must not escape")
+
+
+class TimeoutProvider(MockGLTGProvider):
+    provider_name = "timeout-provider"
+
+    def evaluate_gltg_assessment(self, **kwargs):
+        raise ProviderTimeout("provider timeout; raw body must not escape")
+
+
+class MissingFieldsProvider(MockGLTGProvider):
+    provider_name = "missing-fields-provider"
+
+    def evaluate_gltg_assessment(self, **kwargs):
+        return {"assessment_schema_version": "gltg-assessment-v1"}
 
 
 class DeadlineContradictoryProvider(MockGLTGProvider):
@@ -126,6 +140,33 @@ def test_unavailable_llm_is_explicit_but_numbers_remain_canonical(
     assert _canonical_numbers(result) == _canonical_numbers(deterministic)
     assert any(w.code == "EVALUATOR_UNAVAILABLE" for w in result.warnings)
     assert _manual_review_flags(result) == (True, True, True)
+    assert "raw body" not in result.model_dump_json()
+
+
+@pytest.mark.parametrize("provider_cls", [TimeoutProvider, MissingFieldsProvider])
+def test_timeout_or_missing_fields_never_change_canonical_numbers(
+    monkeypatch: pytest.MonkeyPatch,
+    provider_cls: type[MockGLTGProvider],
+) -> None:
+    request = load_request()
+    monkeypatch.setenv("GLTG_EVALUATOR_MODE", "deterministic")
+    deterministic = evaluate(request)
+
+    monkeypatch.setenv("GLTG_EVALUATOR_MODE", "llm")
+    monkeypatch.setattr(
+        orchestrator_module,
+        "get_provider",
+        lambda settings: provider_cls(),
+    )
+    result = evaluate(request)
+
+    assert _canonical_numbers(result) == _canonical_numbers(deterministic)
+    assert (
+        result.quantiles.p50_days
+        <= result.quantiles.p80_days
+        <= result.quantiles.p90_days
+    )
+    assert result.quantiles.p50_days >= 0
     assert "raw body" not in result.model_dump_json()
 
 
