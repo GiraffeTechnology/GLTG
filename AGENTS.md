@@ -54,4 +54,3 @@ new governance system or make unrelated platform work a prerequisite.
   or internal coordination transcripts.
 - Do not force-push, push directly to main, merge, or deploy unless the user
   explicitly authorizes that specific action.
-
