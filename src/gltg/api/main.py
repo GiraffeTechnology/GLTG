@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from ..errors import GLTGError
 from ..services.v2_pipeline import EvidenceAuthError, EvidenceUnavailableError
 from ..version import __version__
-from .routes import router
+from .routes import PrivateSnapshotResolutionUnavailable, router
 from .tenant_security import InboundIdentityError
 
 
@@ -96,6 +96,18 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=exc.status_code,
             content={"error": exc.code, "code": exc.code},
+        )
+
+    @app.exception_handler(PrivateSnapshotResolutionUnavailable)
+    async def _private_snapshot_unavailable_handler(
+        request: Request, exc: PrivateSnapshotResolutionUnavailable
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "PRIVATE_SNAPSHOT_RESOLUTION_UNAVAILABLE",
+                "code": "PRIVATE_SNAPSHOT_RESOLUTION_UNAVAILABLE",
+            },
         )
 
     @app.exception_handler(Exception)

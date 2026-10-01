@@ -292,6 +292,23 @@ class GLTGSimulationRequestV2(BaseModel):
     constraints: GLTGSimulationConstraintsV2 = Field(default_factory=GLTGSimulationConstraintsV2)
 
 
+class GLTGPrivateSnapshotReference(BaseModel):
+    snapshot_id: str
+    tenant_id: TenantId
+    snapshot_type: str
+    contract_version: str
+    adapter_identity: str
+    dataset_identity: str
+    source_time: str
+    captured_at: str
+    lineage: list[str]
+    canonical_fingerprint: str
+
+
+class GLTGPrivateSnapshotSimulationRequest(BaseModel):
+    private_snapshot_reference: GLTGPrivateSnapshotReference
+
+
 class GLTGQuantiles(BaseModel):
     p50_days: float = Field(ge=0, allow_inf_nan=False)
     p80_days: float = Field(ge=0, allow_inf_nan=False)

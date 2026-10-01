@@ -8,6 +8,7 @@ from typing import Annotated
 from fastapi import APIRouter, Header
 
 from ..behavioral.schemas import (
+    GLTGPrivateSnapshotSimulationRequest,
     GLTGPathsEnumerateRequestV2,
     GLTGPathsEnumerateResponseV2,
     GLTGPathV2,
@@ -22,6 +23,7 @@ from ..services import engine_adapter
 from ..services.v2_pipeline import run_reforecast, run_simulation
 from ..version import __version__
 from .schemas import (
+    GLTGDiscoveryResponse,
     HealthResponse,
     LeadTimeEstimateRequest,
     LeadTimeEstimateResponse,
@@ -31,9 +33,13 @@ from .schemas import (
     ReforecastResponse,
     VersionResponse,
 )
-from .tenant_security import require_tenant_identity
+from .tenant_security import InboundIdentityError, require_tenant_identity
 
 router = APIRouter()
+
+
+class PrivateSnapshotResolutionUnavailable(Exception):
+    """The accepted snapshot reference cannot yet be resolved through Data API."""
 
 
 @router.get("/health", response_model=HealthResponse, tags=["meta"])
@@ -44,6 +50,39 @@ def health() -> HealthResponse:
 @router.get("/version", response_model=VersionResponse, tags=["meta"])
 def version() -> VersionResponse:
     return VersionResponse(service="gltg", version=__version__, api_version="v1")
+
+
+@router.get(
+    "/api/gltg/v1/discovery",
+    response_model=GLTGDiscoveryResponse,
+    tags=["meta"],
+)
+def discover_aivan_contract(
+    x_service_tenant_id: Annotated[str, Header(alias="X-Service-Tenant-ID")],
+    x_service_auth: Annotated[str, Header(alias="X-Service-Auth")],
+    x_service_id: Annotated[str, Header(alias="X-Service-ID")],
+    x_gltg_contract_version: Annotated[
+        str, Header(alias="X-GLTG-Contract-Version")
+    ],
+    x_aivan_correlation_id: Annotated[
+        str, Header(alias="X-AIVAN-Correlation-ID")
+    ],
+    x_service_capability: Annotated[str, Header(alias="X-Service-Capability")],
+) -> GLTGDiscoveryResponse:
+    require_tenant_identity(
+        x_service_tenant_id,
+        x_service_auth,
+        [x_service_tenant_id],
+    )
+    if x_service_id != "aivan":
+        raise InboundIdentityError("CALLER_SERVICE_INVALID", 403)
+    if x_gltg_contract_version != "gltg.lead-time.v1":
+        raise InboundIdentityError("CONTRACT_VERSION_UNSUPPORTED", 409)
+    if x_service_capability != "lead-time.evaluate":
+        raise InboundIdentityError("CAPABILITY_DENIED", 403)
+    if not x_aivan_correlation_id.strip():
+        raise InboundIdentityError("CORRELATION_ID_REQUIRED", 422)
+    return GLTGDiscoveryResponse(service_version=__version__)
 
 
 @router.get("/ready", tags=["meta"])
@@ -110,10 +149,20 @@ def reforecast(req: ReforecastRequest) -> ReforecastResponse:
     tags=["lead-time-v2"],
 )
 def simulate_lead_time_v2(
-    req: GLTGSimulationRequestV2,
+    req: GLTGSimulationRequestV2 | GLTGPrivateSnapshotSimulationRequest,
     x_service_tenant_id: Annotated[str, Header(alias="X-Service-Tenant-ID")],
     x_service_auth: Annotated[str, Header(alias="X-Service-Auth")],
 ) -> GLTGSimulationResponseV2:
+    if isinstance(req, GLTGPrivateSnapshotSimulationRequest):
+        require_tenant_identity(
+            x_service_tenant_id,
+            x_service_auth,
+            [req.private_snapshot_reference.tenant_id],
+        )
+        # giraffe-db's selected Data API can issue immutable references, but its
+        # accepted HTTP contract does not yet expose a tenant-bound snapshot
+        # read endpoint. Never guess or accept consumer-supplied private facts.
+        raise PrivateSnapshotResolutionUnavailable
     require_tenant_identity(x_service_tenant_id, x_service_auth, [req.tenant_id])
     return run_simulation(req)
 

@@ -188,6 +188,16 @@ class VersionResponse(BaseModel):
     api_version: str = "v1"
 
 
+class GLTGDiscoveryResponse(BaseModel):
+    service: str = "gltg"
+    service_version: str
+    contract_version: str = "gltg.lead-time.v1"
+    capabilities: list[str] = Field(
+        default_factory=lambda: ["lead-time.evaluate"]
+    )
+    evaluation_path: str = "/v2/lead-time/simulate"
+
+
 # --------------------------------------------------------------------------- #
 # Supplier Signal / Questionnaire (next iteration)
 # --------------------------------------------------------------------------- #
