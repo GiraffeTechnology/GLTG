@@ -25,7 +25,7 @@ def three_participant_order():
         quantity=3000,
         participants=participants,
         requested_date=date(2026, 12, 31),
-    )
+    ).model_copy(update={"evaluation_date": date(2026, 1, 1)})
 
 
 @pytest.fixture

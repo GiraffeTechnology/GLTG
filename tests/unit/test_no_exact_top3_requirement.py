@@ -23,7 +23,7 @@ def _evaluate(num_participants: int, requested_date=date(2026, 12, 31)):
     engine = LeadTimeGraphEngine()
     participants = [make_participant(f"P{i}") for i in range(1, num_participants + 1)]
     order = make_order(participants=participants, requested_date=requested_date)
-    return engine.evaluate(order)
+    return engine.evaluate(order.model_copy(update={"evaluation_date": date(2026, 1, 1)}))
 
 
 class TestNoExactTop3Requirement:

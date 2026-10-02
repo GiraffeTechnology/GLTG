@@ -51,6 +51,9 @@ These rules are covered by prompt-contract tests in
 
 ## User payload
 
+Business input is standard English, after non-English input has passed through `giraffe-language-skill` before workflow entry. Evidence is read from the selected replaceable private DB, including historical and current process records. No raw multilingual business payload or conversation-memory substitute is passed as authoritative fact. Required persisted business text follows the English-only rule with the enterprise/user profile exception.
+
+
 The user payload is **structured**, not a long unbounded natural-language dump.
 `build_user_payload(req)` emits these sections:
 

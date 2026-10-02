@@ -6,6 +6,7 @@ Run from the GLTG/ directory:
 
 import sys
 import pathlib
+from datetime import date
 
 ROOT = pathlib.Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT / "src"))
@@ -22,7 +23,9 @@ def run_case(label: str, json_file: str, engine: LeadTimeGraphEngine):
     print(f"{'=' * 60}")
     order_path = EXAMPLES / json_file
     print(f"Loading: {order_path}")
-    order = load_order_from_json(order_path)
+    order = load_order_from_json(order_path).model_copy(
+        update={"evaluation_date": date(2026, 1, 1)}
+    )
     print(f"  order_id    : {order.order_id}")
     print(f"  quantity    : {order.quantity:,}")
     print(f"  participants: {len(order.participants)}")

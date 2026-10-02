@@ -1,130 +1,35 @@
-# GLTG — Industrial Lead-Time Intelligence Engine
+# GLTG lead time module
 
-`Python 3.11+` | `GLTG v1.0.0` | `FastAPI` | `Lead-Time Simulation` | `P50/P80/P90`
+GLTG is the API dependency that supplies lead-time calculation, simulation, path comparison and reforecasting to Aivan and other Giraffe Agent applications. Aivan is the frontend application for inquiry, quotation and order confirmation; abcdYi is the apparel and textile industry application whose frontend calls Aivan.
 
-## Product Positioning
+## Delivery objective
 
-GLTG is Giraffe Technology's industrial lead-time intelligence engine.
+Use the original product descriptions and the supplied GLTG Trade and Processing Time Factor Model PRD to define the required outcomes. Return P50/P80/P90 estimates, feasible alternatives, material and capacity effects, risk explanations, and updated forecasts as relevant process evidence changes. Explain how a factor affects median lead time and tail uncertainty. Slow supplier response is not automatically low engagement; fast response is not automatically reliable.
 
-It evolved from a simple Lead Time Graph into a delivery risk prediction and simulation engine for industrial execution workflows.
+The full source-aligned iteration specification is `docs/GLTG_TRADE_PROCESSING_TIME_FACTOR_MODEL_PRD.md`. Historical issue titles, prior implementation reports and installed algorithms do not independently redefine product scope or add delivery prerequisites.
 
-This repository follows:
+## Responsibility boundary
 
-**PRD v2.0 Product Scope Reset — GLTG Industrial Lead-Time Intelligence Engine**
+- GLTG owns lead-time model behavior, scenario comparison and explanation.
+- Aivan, abcdYi and Giraffe Agent call the module through its API; they do not copy its engine or silently substitute local estimates.
+- The selected private DB supplies authoritative business history and current process evidence and records required model inputs, outputs and lineage. `giraffe-db` is a replaceable reference provider, not a mandatory vendor or physical DB identity.
+- GPM owns its declared procurement/quote-guidance behavior through its API.
+- Product workflows and human operators retain business execution and commercial approval.
+- `giraffe-language-skill` supplies dynamic translation before business processing and for requested non-English output.
 
-See GitHub Issue #12 for the frozen product baseline.
+GLTG receives standard-English business input. The DB stores English business history, process records and results; only enterprise/user profile information may retain non-English values. Do not bypass this boundary by putting raw multilingual business content into evidence or audit fields.
 
----
+## Acceptance data and evidence
 
-## Previous PRD Definition
+The owner's two designated simulated databases are valid for product testing and acceptance. Preserve synthetic labels and source traceability. Actual selected API calls, contract handling, model behavior and relevant persistence still need to be exercised; skipped tests and mock transports are reported as such. Production customer records and a particular cloud or SQL vendor are not acceptance prerequisites.
 
-Original positioning:
+P50/P80/P90 are model estimates. Do not describe them as empirically calibrated delivery guarantees without calibration evidence. The supplied PRD places statistical calibration after sufficient observations are available; it is not a prerequisite for the initial rule-based factor iteration.
 
-```
-GLTG = Lead Time Graph
-```
+## Current implementation snapshot
 
-Original objectives:
+At main revision `668fe9a9c821c0b13c9402ed2f832faddf933050`, `src/gltg/evaluator/config.py` and `orchestrator.py` select deterministic evaluation by default. `GLTG_EVALUATOR_MODE=llm` is explicit opt-in; a model/provider may be configured without changing the product definition. Existing evaluator, guardrail and fallback implementations are preserved. This observation does not establish that every target requirement is implemented or tested.
 
-- Calculate delivery cycles based on supply chain nodes;
-- Output order delivery feasibility.
-
----
-
-## Current Product Scope
-
-GLTG is responsible for:
-
-- Delivery time simulation;
-- Risk prediction;
-- Supply chain path comparison;
-- Behavioral factor adjustment;
-- Delivery scenario explanation.
-
-GLTG is not responsible for:
-
-- Workflow execution;
-- Commercial approval;
-- Raw language understanding;
-- Order fact management.
-
----
-
-## System Boundary
-
-```
-Canonical Order Data
-        ↓
-      GLTG
-        ↓
-Lead-Time Simulation
-        ↓
-Risk / Scenario Output
-        ↓
-Aivan Execution Layer
-```
-
-Component ownership:
-
-- GLTG = lead-time intelligence
-- giraffe-db = business facts and evidence
-- Aivan = execution workflow
-- Human operator = commercial decision
-
----
-
-## Core Capability
-
-GLTG provides:
-
-```
-P50 = median planning lead time
-P80 = conservative planning lead time
-P90 = high-confidence planning lead time
-```
-
-It explains:
-
-- Why delivery risk changed;
-- Which supplier or buyer behavior affected forecast;
-- Whether fallback suppliers are required;
-- Whether human review is required.
-
----
-
-## v1.0 Frozen Delivery Scope
-
-Must complete:
-
-1. Lead-Time Simulation
-2. P50/P80/P90 output
-3. Risk Explanation
-4. Scenario Comparison
-5. Aivan API Integration
-
----
-
-## Prohibited Scope Expansion
-
-During v1.0, do not add:
-
-- Generic AI Agent capabilities;
-- Workflow control layer;
-- Commercial transaction system;
-- Unvalidated ML/Bayesian model replacement of the deterministic engine.
-
----
-
-## Core Principle
-
-All future development must:
-
-1. Map to the PRD scope;
-2. Have explicit Acceptance Criteria;
-3. Move toward production-ready delivery;
-4. Not use algorithmic complexity as a substitute for delivery.
-
----
+The v1 API and v2 API are described in `docs/api_reference.md` and `docs/gltg_v2_behavioral_contract.md`. Use `docs/integration_guide.md` for the API boundary. Historical engine/CLI fixtures remain useful provider-side assets; they do not authorize embedding the engine in Aivan.
 
 ## License
 

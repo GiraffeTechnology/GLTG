@@ -77,7 +77,7 @@ Without `trade_processing_factors`, existing v2 requests keep the previous behav
 ## Responsibility Boundary
 
 ```text
-facts live in giraffe-db
+history and process facts live in the selected replaceable private DB
 simulation lives in GLTG
 execution lives in product repositories
 ```
@@ -100,6 +100,12 @@ silently fall back to local estimates
 invent behavior facts with an LLM
 copy GLTG behavioral rules into product code
 ```
+
+## Model contract and implementation status
+
+The following describes the rule-based model contract. It is not proof of current execution. The checked implementation defaults to deterministic evaluation; LLM evaluation is an explicit configured option. The source-aligned target and remaining technical clarifications are in `GLTG_TRADE_PROCESSING_TIME_FACTOR_MODEL_PRD.md`.
+
+All business input is standard English after `giraffe-language-skill` translation. DB history, process values and results remain English; only enterprise/user profile information has the non-English exception. Designated simulated databases are valid acceptance sources, while actual API integration and persistence must still be exercised.
 
 ## MVP Model
 
@@ -141,7 +147,7 @@ The API exposes `model_version`, `rule_version`, `calibration_version`, `gltg_ru
 
 ## DB Mapping
 
-The implementation keeps storage outside GLTG for now, but the contract maps cleanly to `giraffe-db`:
+Storage remains behind the selected compatible private-data provider. `giraffe-db` is the reference mapping; required business history, process inputs and outputs remain DB-backed rather than conversation-backed:
 
 ```text
 behavior_observations.behavior_type
@@ -151,3 +157,4 @@ optional material_availability_observations
 ```
 
 GLTG responses preserve `source_observation_ids`, behavior snapshot IDs, `gltg_run_id`, and factor scores so giraffe-db can persist lineage without product repositories copying the model.
+
