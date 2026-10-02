@@ -1,7 +1,6 @@
 # GLTG Fallback and Guardrails
 
-Deterministic rules are **not** the primary GLTG model. They are retained only
-as validators, guardrails, sanity checks, test baselines, and optional fallback.
+This document describes existing evaluator validation and fallback behavior. At checked revision `668fe9a9c821c0b13c9402ed2f832faddf933050`, deterministic evaluation is the default and LLM-assisted evaluation is explicit opt-in. The source-aligned trade/processing PRD defines the model target. Existing deterministic algorithms, validators and optional fallback paths are retained; this document does not demote or replace the source target.
 
 ## Validator (`src/gltg/evaluator/validator.py`)
 
@@ -50,7 +49,7 @@ The LLM may recommend `P50/P80/P90`, but GLTG owns normalization:
 The legacy hard-coded behavioral formulas were moved here and demoted. They run
 only when:
 
-- `GLTG_EVALUATOR_MODE=fallback`, **or**
+- `GLTG_EVALUATOR_MODE=deterministic` (the checked default) or the retained `fallback` compatibility alias, **or**
 - `GLTG_EVALUATOR_MODE=llm` **and** the provider fails **and**
   `GLTG_ALLOW_RULE_FALLBACK=true`.
 

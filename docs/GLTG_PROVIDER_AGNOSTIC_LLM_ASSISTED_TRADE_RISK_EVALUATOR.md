@@ -1,6 +1,6 @@
 # GLTG Provider-Agnostic LLM-Assisted Trade Risk Evaluator
 
-GLTG uses an LLM-assisted evaluator architecture.
+This document describes the existing optional LLM-assisted evaluator implementation. Product targets come from the source-aligned trade/processing PRD; an optional evaluator design does not replace the target or expand delivery scope.
 
 The LLM-assisted evaluator is explicit opt-in (`GLTG_EVALUATOR_MODE=llm`);
 GLTG's default evaluation path is the deterministic rule engine. When llm
@@ -22,8 +22,7 @@ evaluator, constrained by GLTG schema, evidence rules, quantile validation, and
 audit requirements?"*
 
 The LLM evaluates trade context. GLTG validates, normalizes, constrains,
-audits, and packages. giraffe-db stores facts, evidence, observations,
-features, outcomes, and lineage. AIVAN / abcdYi / giraffe-agent call GLTG
+audits, and packages. The selected replaceable private DB stores historical and process facts, evidence, observations, features, outcomes and lineage. Business packets are standard English after `giraffe-language-skill` translation; the DB profile exception does not permit raw multilingual business payloads. AIVAN / abcdYi / giraffe-agent call GLTG
 through HTTP and must not copy GLTG model logic.
 
 ## Pipeline
@@ -66,7 +65,7 @@ GLTG v2 response (+ optional giraffe-db persistence)
 | `evaluator/validator.py` | Schema/evidence/numeric validation and repair. |
 | `evaluator/guardrails.py` | Business invariants + quantile normalizer. |
 | `evaluator/assessment_packet.py` | Packet → v2 response projection; manual-review packet. |
-| `evaluator/fallback_rules.py` | Demoted deterministic rules (guardrail/fallback only). |
+| `evaluator/fallback_rules.py` | Existing deterministic implementation, called by default deterministic mode and explicitly permitted rule fallback. |
 | `evaluator/config.py` | Environment-driven `EvaluatorSettings`. |
 
 ## Configuration
@@ -91,3 +90,4 @@ hard-coded formulas.
 - [Assessment packet schema](GLTG_ASSESSMENT_PACKET_SCHEMA.md)
 - [Prompt protocol](GLTG_PROMPT_PROTOCOL.md)
 - [Fallback and guardrails](GLTG_FALLBACK_AND_GUARDRAILS.md)
+

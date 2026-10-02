@@ -1,216 +1,55 @@
-# GLTG Integration Guide
+# GLTG API integration guide
 
-## Overview
+## Supported product boundary
 
-This guide explains how to install GLTG inside the Giraffe Agent repository, import it in agent code, and use the main integration points: `GiraffeAgentAdapter`, `load_order_from_json`, and the packet serializers.
+Aivan calls GLTG as an API dependency for inquiry, quotation and order-confirmation decisions. abcdYi and Giraffe Agent use the same model ownership boundary. The GLTG service owns its engine, model formulas, evaluator and permitted fallbacks. Product clients build requests, map responses and expose dependency errors; they do not import `LeadTimeGraphEngine`, manipulate `sys.path` to embed it, or copy model logic as a local fallback.
 
----
+The earlier embedded-engine integration recipe is preserved in the source revision history as a legacy reference. Its implementation and provider-side utilities are not deleted by this documentation update.
 
-## Installation
+## Existing endpoints
 
-GLTG is distributed as an editable local package. From the repository root:
+The v1 consumer interface includes:
 
-```bash
-cd GLTG
-uv pip install -e .
+```text
+GET  /health
+GET  /version
+POST /v1/lead-time/estimate
+POST /v1/paths/enumerate
+POST /v1/reforecast
 ```
 
-Or using pip:
+The v2 model interface includes:
 
-```bash
-pip install -e GLTG/
+```text
+POST /v2/lead-time/simulate
+POST /v2/paths/enumerate
+POST /v2/reforecast
 ```
 
-For development with test dependencies:
+Keep current request/response names in `api_reference.md`, `gltg_v2_behavioral_contract.md` and the versioned contract fixtures. This documentation update does not rename protocol identifiers or claim that all clients already use v2.
 
-```bash
-uv pip install -e "GLTG/[dev]"
-```
+## Facts and language
 
-Once installed, the `gltg` package is importable from any Python environment within the project. The CLI command `gltg` is also available.
+Build model input from the selected replaceable private DB. Include relevant historical baselines and current process evidence, identifiers, behavior snapshots and source observation IDs. `giraffe-db` is the reference provider; a compatible user-owned DB may be substituted without redefining GLTG or Aivan.
 
-### sys.path Alternative (for scripts)
+Non-English input must pass through `giraffe-language-skill` before the business workflow and model call. GLTG receives standard-English business packets. The DB stores English business history, process records and results, with only enterprise/user profile information permitted to retain non-English values. Raw/evidence/audit fields do not create further exceptions.
 
-If you do not want to install the package, add `src/` to `sys.path` at the top of your script:
+## Provider authentication and persistence
 
-```python
-import sys, pathlib
-ROOT = pathlib.Path(__file__).parent.parent  # adjust to reach GLTG/
-sys.path.insert(0, str(ROOT / "src"))
-import gltg
-```
+The current GLTG reference data client is `src/gltg/integrations/giraffe_db_client.py`. Its existing settings are `GLTG_GIRAFFE_DB_BASE_URL`, `GLTG_GIRAFFE_DB_SERVICE_AUTH_SECRET` and `GLTG_GIRAFFE_DB_TIMEOUT_SECONDS`. A verified tenant ID is passed per call using `X-Service-Tenant-ID`; the service credential uses `X-Service-Auth`. Preserve these security properties when mapping a replacement provider.
 
----
+Persist required run inputs, outputs, model/rule/calibration versions, explanations and source IDs through the selected private DB. A successful model calculation does not prove that a later write succeeded. Report missing facts, invalid credentials, unavailable storage and failed persistence accurately. Do not substitute conversation memory for DB-backed evidence.
 
-## Using GiraffeAgentAdapter
+## Model results
 
-The `GiraffeAgentAdapter` bridges the Giraffe Agent's dynamic form payloads and the GLTG data models.
+Preserve P50/P80/P90 quantiles, component durations, risk decomposition, response-delay interpretation, explanations, warnings and lineage. Do not turn a planning estimate into a verified commercial guarantee. Preserve supplier-provided quotes and facts separately from model-derived interpretation.
 
-### Import
+An LLM provider failure and a DB evidence failure are different conditions. Any supported GLTG-internal fallback remains explicit in response metadata and warnings. Clients do not silently replace a failed API response with a local calculation or invented data.
 
-```python
-from gltg.integrations.giraffe_agent_adapter import GiraffeAgentAdapter
-```
+## Verification
 
-### dynamic_form_to_order
+Use the owner's designated simulated databases for legitimate product acceptance, with accurate synthetic labels. Exercise the actual selected consumer, GLTG service and data-provider path: requests and headers, successful and failing responses, relevant business read/write/readback, and traceability. Report test doubles and skipped/unexecuted integration stages separately. Preserve provider-local model tests and cross-repository API integration tests.
 
-Converts a raw agent form payload dict into an `ApparelOrderInput`:
+## Provider-side development utilities
 
-```python
-adapter = GiraffeAgentAdapter()
-
-form_data = {
-    "order_id": "ORD-2025-999",
-    "product_type": "woven_shirt",
-    "quantity": 3000,
-    "requested_delivery_date": "2025-10-01",
-    "trade_term": "FOB",
-    "destination": "Hamburg, Germany",
-    "dynamic_form": {
-        "fabric_type": "100% cotton",
-        "color": "navy",
-        "quality_standard": "AQL 2.5",
-    },
-    "participants": [
-        {
-            "participant_id": "FACT-999",
-            "name": "My Factory",
-            "participant_type": "GARMENT_FACTORY",
-            "capabilities": [
-                {"capability_id": "c1", "node_type": "CUTTING", "capacity_per_day": 600},
-                {"capability_id": "c2", "node_type": "SEWING", "capacity_per_day": 500},
-                {"capability_id": "c3", "node_type": "PACKING", "capacity_per_day": 1000},
-            ],
-        }
-    ],
-}
-
-order = adapter.dynamic_form_to_order(form_data)
-```
-
-### packet_to_agent_response
-
-Converts a `DeliveryFeasibilityPacket` back to the agent's simplified output format:
-
-```python
-from gltg.engine import LeadTimeGraphEngine
-
-engine = LeadTimeGraphEngine()
-packet = engine.evaluate(order)
-
-response = adapter.packet_to_agent_response(packet)
-# response is a plain dict suitable for JSON serialization
-print(response["status"])            # e.g. "FEASIBLE"
-print(response["commitable_date"])   # e.g. "2025-09-28"
-print(response["top_risks"])         # list of risk flag codes
-print(response["options"])           # list of option summaries
-```
-
----
-
-## Importing and Using GLTG from Agent Code
-
-### Full Evaluation Pipeline
-
-```python
-from gltg.engine import LeadTimeGraphEngine
-from gltg.models.order import ApparelOrderInput
-
-order = ApparelOrderInput(
-    order_id="ORD-AGENT-001",
-    product_type="woven_shirt",
-    quantity=5000,
-    requested_delivery_date=date(2025, 10, 15),
-    participants=[...],  # list[ParticipantProfile]
-    supplier_memory=[...],  # list[SupplierMemoryRecord]
-)
-
-engine = LeadTimeGraphEngine()
-packet = engine.evaluate(order)
-
-print(packet.status.value)
-print(packet.commitable_date)
-print(len(packet.options))
-```
-
-### Loading from JSON
-
-```python
-from gltg.integrations.json_io import load_order_from_json, load_events_from_json
-
-order = load_order_from_json("path/to/order.json")
-events = load_events_from_json("path/to/events.json")
-```
-
-### Reforecasting
-
-```python
-updated_packet = engine.reforecast(packet, events)
-
-print(f"Before: {packet.commitable_date}")
-print(f"After:  {updated_packet.commitable_date}")
-```
-
----
-
-## Serializing and Deserializing Packets
-
-The `serializers` module provides round-trip JSON support for `DeliveryFeasibilityPacket`:
-
-```python
-from gltg.packets.serializers import serialize_packet, deserialize_packet
-import json
-
-# Serialize to a JSON-compatible dict
-data = serialize_packet(packet)
-json_string = json.dumps(data, indent=2)
-
-# Deserialize from dict
-packet2 = deserialize_packet(data)
-
-# Or use the json_io helpers for file-based I/O
-from gltg.integrations.json_io import save_packet_to_json
-
-save_packet_to_json(packet, "output/my_packet.json")
-```
-
-The serializer uses `packet.model_dump(mode="json")` from Pydantic v2, which ensures all `date`, `datetime`, and `Enum` fields are serialized as JSON-safe strings.
-
----
-
-## CLI Usage
-
-GLTG provides a `gltg` CLI command with two subcommands.
-
-### evaluate
-
-```bash
-# Print full JSON packet
-gltg evaluate path/to/order.json
-
-# Print human-readable summary
-gltg evaluate path/to/order.json --summary
-
-# Save packet to file
-gltg evaluate path/to/order.json -o output/packet.json
-```
-
-### reforecast
-
-```bash
-# Reforecast an existing packet with new events
-gltg reforecast output/packet.json path/to/events.json --summary
-
-# Save updated packet
-gltg reforecast output/packet.json path/to/events.json -o output/updated_packet.json
-```
-
----
-
-## Notes for Agent Integration
-
-- All GLTG models are Pydantic v2 `BaseModel` subclasses. Use `model_validate()` to construct from dicts and `model_dump(mode="json")` to serialize.
-- The engine is stateless and thread-safe. Create one `LeadTimeGraphEngine` instance and reuse it across requests.
-- `date.today()` is used internally as the scheduling start date. In production agent code, you may want to inject a fixed reference date for reproducibility in testing.
-- The `dynamic_form` field on `ApparelOrderInput` is a pass-through dict for buyer-supplied form fields. It is not validated by GLTG but is available for custom validators or downstream processing.
-- Risk flags are deduplicated by `code`. The same `RiskFlagCode` will not appear twice in `packet.risk_flags`.
+GLTG's existing package, engine adapters, serializers and CLI remain available for development within this repository. The CLI commands `gltg evaluate` and `gltg reforecast` operate on provider-side JSON fixtures. A successful CLI run verifies that local utility, not Aivan's API integration. No utility must be removed merely because the product boundary is API-based.

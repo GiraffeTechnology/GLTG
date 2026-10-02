@@ -1,6 +1,8 @@
 # GLTG Acceptance Criteria
 
-This document lists the 20 acceptance criteria for the GLTG engine. Each item is marked as **Implemented** with a brief note on how it is satisfied.
+This document preserves 20 historical engine-level checks and their recorded implementation claims. The claims below are not a fresh test run or a replacement for the source-aligned product/iteration definition. Retain useful model and regression tests, and verify the applicable tests against the delivered revision.
+
+Current product acceptance also exercises the selected Aivan-to-GLTG API path, standard-English DB-backed input, required result persistence and source traceability, and the material/response scenarios in `GLTG_TRADE_PROCESSING_TIME_FACTOR_MODEL_PRD.md`. Owner-designated simulated DBs are valid acceptance data; no production-customer-data condition is added. Provider-local tests, test doubles and skipped integration jobs are reported separately. Statistical calibration is not claimed before it has actually been performed.
 
 ---
 
@@ -26,3 +28,4 @@ This document lists the 20 acceptance criteria for the GLTG engine. Each item is
 | 18 | All models must be Pydantic v2 `BaseModel` subclasses, fully serializable to JSON via `model_dump(mode="json")`. | **Implemented** | All models in `gltg/models/` inherit from `pydantic.BaseModel`. `serializers.py` uses `model_dump(mode="json")`. Round-trip tested via `deserialize_packet(serialize_packet(packet))`. |
 | 19 | The engine must return identical `status` and option count across 5 consecutive evaluations of the same order on the same day. | **Implemented** | Verified by `verify_gltg_5x.py`. Engine is stateless; `date.today()` is stable within a day. |
 | 20 | The `gltg evaluate` and `gltg reforecast` CLI commands must be functional and produce parseable output. | **Implemented** | `gltg/integrations/cli.py` implements both subcommands using `argparse`. Full JSON, `--summary` human-readable, and `-o FILE` output modes are supported. |
+
