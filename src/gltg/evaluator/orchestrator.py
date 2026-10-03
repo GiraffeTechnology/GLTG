@@ -15,7 +15,6 @@ GLTG never calls an LLM for calculations unless the operator opted in.
 from __future__ import annotations
 
 from ..behavioral.schemas import GLTGSimulationResponseV2, GLTGWarningV2
-from .assessment_packet import manual_review_packet, project_to_response
 from .config import EvaluatorSettings, load_settings
 from .fallback_rules import run_fallback
 from .prompts import SYSTEM_PROMPT, assessment_schema_dict, build_user_payload
@@ -24,31 +23,42 @@ from .providers.base import GLTGLLMProvider, ProviderError
 from .schemas import GLTGAssessmentInput, GLTGAssessmentPacket
 from .validator import PacketParseError, parse_packet, validate_and_repair
 
+QUALITATIVE_PROVIDER_WARNING_CODES = frozenset(
+    {
+        "CONFIRMED_WITHOUT_EVIDENCE_DOWNGRADED",
+        "HIGH_CONFIDENCE_WITHOUT_EVIDENCE_DOWNGRADED",
+        "UNKNOWN_MATERIAL_CANNOT_BE_CONFIRMED",
+        "UNKNOWN_EXECUTION_CANNOT_BE_CONFIRMED",
+        "UNSUPPORTED_FAST_PRECISE_QUOTE",
+        "SLOW_RESPONSE_NOT_LOW_ENGAGEMENT",
+        "RESPONSE_DELAY_PROBABILITIES_RENORMALIZED",
+    }
+)
+
 
 class GLTGEvaluatorOrchestrator:
     """Provider-agnostic entry point for GLTG v2 lead-time evaluation."""
 
     def evaluate(self, req: GLTGAssessmentInput) -> GLTGSimulationResponseV2:
         settings = load_settings()
+        canonical = run_fallback(
+            req,
+            settings,
+            provider_unavailable=False,
+            deprecated_fallback_alias=settings.is_fallback_mode,
+        )
 
         if settings.is_deterministic_mode:
-            return run_fallback(
-                req,
-                settings,
-                provider_unavailable=False,
-                deprecated_fallback_alias=settings.is_fallback_mode,
-            )
-
-        # `get_provider` raises on an unknown provider name (clear config error).
-        provider = get_provider(settings)
+            return canonical
 
         try:
+            provider = get_provider(settings)
             packet = self._evaluate_with_provider(provider, req, settings)
-        except (ProviderError, PacketParseError) as exc:
-            return self._handle_failure(req, settings, exc)
+        except (ProviderError, PacketParseError, ValueError):
+            return self._handle_failure(canonical, settings)
 
         result = validate_and_repair(packet, req)
-        return project_to_response(req, result.packet, settings, result.warnings)
+        return self._merge_auxiliary(canonical, result.packet, settings, result.warnings)
 
     def _evaluate_with_provider(
         self,
@@ -60,15 +70,15 @@ class GLTGEvaluatorOrchestrator:
         user_payload = build_user_payload(req)
         schema = assessment_schema_dict()
 
-        call_kwargs = dict(
-            system_prompt=system_prompt,
-            user_payload=user_payload,
-            schema=schema,
-            model=settings.model,
-            timeout_seconds=settings.timeout_seconds,
-            temperature=settings.temperature,
-            json_mode=settings.json_mode,
-        )
+        call_kwargs = {
+            "system_prompt": system_prompt,
+            "user_payload": user_payload,
+            "schema": schema,
+            "model": settings.model,
+            "timeout_seconds": settings.timeout_seconds,
+            "temperature": settings.temperature,
+            "json_mode": settings.json_mode,
+        }
 
         try:
             raw = provider.evaluate_gltg_assessment(**call_kwargs)
@@ -96,35 +106,93 @@ class GLTGEvaluatorOrchestrator:
 
     def _handle_failure(
         self,
-        req: GLTGAssessmentInput,
+        canonical: GLTGSimulationResponseV2,
         settings: EvaluatorSettings,
-        exc: Exception,
     ) -> GLTGSimulationResponseV2:
-        # If rule fallback is explicitly allowed, use the deterministic engine
-        # (clearly marked). Otherwise return a manual-review assessment -- never
-        # silently invent a model result.
-        if settings.allow_rule_fallback:
-            return run_fallback(req, settings, provider_unavailable=True)
-
-        packet = manual_review_packet(
-            req,
-            settings,
-            reason=f"evaluator unavailable: {type(exc).__name__}",
-            evaluation_mode="manual_review",
+        canonical.evaluation_mode = "deterministic_with_llm_unavailable"
+        self._set_manual_review(
+            canonical,
+            required=True,
+            reasons=["optional LLM auxiliary evaluator is unavailable"],
         )
-        result = validate_and_repair(packet, req)
-        warnings = [
+        canonical.explanation_json["llm_auxiliary"] = {
+            "status": "unavailable",
+            "provider": settings.provider,
+            "model": settings.model,
+        }
+        canonical.warnings.append(
             GLTGWarningV2(
                 code="EVALUATOR_UNAVAILABLE",
                 severity="high",
                 message=(
-                    "LLM evaluator unavailable and rule fallback is disabled; "
-                    "returning manual-review assessment."
+                    "Optional LLM auxiliary evaluator is unavailable; canonical "
+                    "deterministic numbers are unchanged and manual review is required."
                 ),
+            )
+        )
+        return canonical
+
+    @staticmethod
+    def _merge_auxiliary(
+        canonical: GLTGSimulationResponseV2,
+        packet: GLTGAssessmentPacket,
+        settings: EvaluatorSettings,
+        warnings: list[GLTGWarningV2],
+    ) -> GLTGSimulationResponseV2:
+        auxiliary = {
+            "status": "available",
+            "provider": packet.model_provider,
+            "model": packet.model_name,
+            "supplier_execution_mode": packet.supplier_execution_assessment.execution_mode,
+            "supplier_execution_status": packet.supplier_execution_assessment.status,
+            "material_availability_status": (
+                packet.material_availability_assessment.material_availability_status
             ),
-            *result.warnings,
-        ]
-        return project_to_response(req, result.packet, settings, warnings)
+            "response_delay_reason": packet.response_delay_reason_assessment.most_likely_reason,
+            "quote_confidence_level": packet.quote_confidence_assessment.quote_confidence_level,
+            "evidence_refs": list(packet.evidence_refs),
+            "missing_information": list(packet.missing_information),
+            "follow_up_questions": list(packet.follow_up_questions),
+            "manual_review_reasons": list(packet.manual_review.reasons),
+        }
+        canonical.evaluation_mode = "deterministic_with_llm_auxiliary"
+        canonical.explanation_json["llm_auxiliary"] = auxiliary
+        canonical.assessment_packet["llm_auxiliary"] = auxiliary
+        canonical.warnings.extend(
+            warning
+            for warning in warnings
+            if warning.code in QUALITATIVE_PROVIDER_WARNING_CODES
+        )
+        GLTGEvaluatorOrchestrator._set_manual_review(
+            canonical,
+            required=packet.manual_review.required,
+            reasons=packet.manual_review.reasons,
+        )
+        return canonical
+
+    @staticmethod
+    def _set_manual_review(
+        canonical: GLTGSimulationResponseV2,
+        *,
+        required: bool,
+        reasons: list[str],
+    ) -> None:
+        review = canonical.assessment_packet.setdefault(
+            "manual_review", {"required": False, "reasons": []}
+        )
+        final_required = bool(
+            required
+            or canonical.manual_review_required
+            or canonical.risk.manual_review_required
+            or review.get("required", False)
+        )
+        review["required"] = final_required
+        review_reasons = review.setdefault("reasons", [])
+        for reason in reasons:
+            if reason not in review_reasons:
+                review_reasons.append(reason)
+        canonical.manual_review_required = final_required
+        canonical.risk.manual_review_required = final_required
 
 
 # Module-level singleton used by the API routes.
