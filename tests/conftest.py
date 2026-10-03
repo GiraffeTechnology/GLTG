@@ -11,6 +11,15 @@ from gltg.models.enums import ApparelNodeType, ParticipantType
 from gltg.models.order import ApparelOrderInput
 from gltg.models.participant import ParticipantProfile
 
+TEST_INBOUND_SECRET = "test-inbound-secret"
+
+
+@pytest.fixture(autouse=True)
+def _configured_inbound_service_auth(monkeypatch):
+    """API tests run with an explicit inbound service trust boundary."""
+
+    monkeypatch.setenv("GLTG_INBOUND_SERVICE_AUTH_SECRET", TEST_INBOUND_SECRET)
+
 
 def make_participant(pid, ptype=ParticipantType.GARMENT_FACTORY, node_types=None):
     """Create a ParticipantProfile with capabilities for the given node types."""
