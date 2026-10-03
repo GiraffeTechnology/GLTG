@@ -1,10 +1,7 @@
-"""Deterministic rule-based lead-time engine (demoted to guardrail/fallback).
+"""Canonical deterministic GLTG lead-time calculation engine.
 
-This is NOT the primary GLTG v2 model. The provider-agnostic LLM-assisted
-evaluator (``gltg.evaluator``) is the default. These hard-coded formulas are
-retained only as deterministic guardrails / sanity checks / optional fallback,
-reached via ``gltg.evaluator.fallback_rules`` when ``GLTG_EVALUATOR_MODE=fallback``
-or when a provider fails and ``GLTG_ALLOW_RULE_FALLBACK=true``.
+Optional LLM providers may add qualitative explanations, but they never own or
+replace the numerical calculation performed here.
 """
 
 from __future__ import annotations
@@ -98,12 +95,23 @@ class BehavioralLeadTimeSimulator:
         state = self._behavior_adjustments(req)
         trade_calc = self._trade_processing_adjustments(req, components, state)
 
+        components.supplier_response_buffer_days = round(state.supplier_response_buffer, 2)
+        components.supplier_uncertainty_buffer_days = round(state.supplier_uncertainty_buffer, 2)
+        components.buyer_decision_buffer_days = round(
+            components.buyer_decision_buffer_days + state.buyer_decision_buffer, 2
+        )
+        components.risk_buffer_days = round(
+            components.risk_buffer_days + state.risk_buffer, 2
+        )
+
         shift = state.supplier_response_buffer + state.buyer_decision_buffer + trade_calc.central_shift_days
         uncertainty = state.supplier_uncertainty_buffer + state.risk_buffer + trade_calc.uncertainty_buffer_days
         if self._has_trade_processing_factors(req):
+            trade_base_days = self._trade_processing_base_days(components)
+            behavioral_shift_days = state.supplier_response_buffer + state.buyer_decision_buffer
             p50, p80, p90 = self._compose_trade_processing_spread(
                 base_q,
-                shift,
+                trade_base_days + behavioral_shift_days,
                 trade_calc.risk_decomposition.lead_time_uncertainty_risk,
             )
             composer = "trade_processing_factor_spread"
@@ -117,10 +125,6 @@ class BehavioralLeadTimeSimulator:
 
         selected = {"P50": p50, "P80": p80, "P90": p90}[req.constraints.lead_time_confidence]
         risk = self._risk(req, selected, p50, p80, p90, state)
-        components.supplier_response_buffer_days = round(state.supplier_response_buffer, 2)
-        components.supplier_uncertainty_buffer_days = round(state.supplier_uncertainty_buffer, 2)
-        components.buyer_decision_buffer_days = round(state.buyer_decision_buffer, 2)
-        components.risk_buffer_days = round(state.risk_buffer, 2)
 
         warnings = list(state.warnings)
         if not req.source_observation_ids:
@@ -153,6 +157,11 @@ class BehavioralLeadTimeSimulator:
                     "central_shift_days": round(shift, 2),
                     "uncertainty_buffer_days": round(uncertainty, 2),
                     "delta_sigma": round(state.delta_sigma, 4),
+                    **(
+                        {"trade_processing_base_days": round(trade_base_days, 2)}
+                        if self._has_trade_processing_factors(req)
+                        else {}
+                    ),
                 },
                 "adjustments": state.explanations,
                 "trade_processing_factor_scores": {
@@ -202,14 +211,34 @@ class BehavioralLeadTimeSimulator:
     @staticmethod
     def _compose_trade_processing_spread(
         base_q: GLTGQuantiles,
-        central_shift_days: float,
+        p50_base_days: float,
         lead_time_uncertainty_risk: float,
     ) -> tuple[float, float, float]:
-        p50 = base_q.p50_days + central_shift_days
+        p50 = p50_base_days
         base_spread = max(3.0, base_q.p80_days - base_q.p50_days, (base_q.p90_days - base_q.p50_days) * 0.7)
         p80 = p50 + base_spread * (1 + 0.8 * lead_time_uncertainty_risk)
         p90 = p50 + base_spread * (1 + 1.3 * lead_time_uncertainty_risk)
         return p50, p80, p90
+
+    @staticmethod
+    def _trade_processing_base_days(components: GLTGComponentBreakdown) -> float:
+        """Compose the PRD's staged deterministic base without double counting."""
+
+        return sum(
+            (
+                components.requirement_confirmation_days,
+                components.material_confirmation_days,
+                components.material_procurement_days,
+                components.preproduction_days,
+                components.capacity_queue_days,
+                components.production_days,
+                components.qc_days,
+                components.expected_rework_days,
+                components.packaging_days,
+                components.logistics_buffer_days,
+                components.buyer_decision_buffer_days,
+            )
+        )
 
     def _trade_processing_adjustments(
         self,
@@ -569,8 +598,7 @@ class BehavioralLeadTimeSimulator:
         components.preproduction_days = round(
             _nz(f.processing.tooling_days, 0.0)
             + (f.processing.sample_days if f.processing.sample_required and f.processing.sample_days else 0.0)
-            + (f.processing.color_approval_days if f.processing.color_approval_required and f.processing.color_approval_days else 0.0)
-            + _nz(f.processing.setup_days, 0.0),
+            + (f.processing.color_approval_days if f.processing.color_approval_required and f.processing.color_approval_days else 0.0),
             2,
         )
         effective_capacity = self._effective_daily_capacity(req, process_multiplier)
@@ -609,18 +637,17 @@ class BehavioralLeadTimeSimulator:
             2,
         )
         components.risk_buffer_days += round(6.0 * risk_decomposition.lead_time_uncertainty_risk, 2)
-        components.base_production_days = round(max(components.base_production_days, components.production_days), 2)
-        components.base_procurement_days = round(max(components.base_procurement_days, components.material_procurement_days), 2)
+        components.base_production_days = components.production_days
+        components.base_procurement_days = round(
+            components.material_procurement_days + components.qc_days, 2
+        )
         components.logistics_buffer_days = round(
-            max(
-                components.logistics_buffer_days,
-                components.export_preparation_days
-                + components.origin_inland_days
-                + components.departure_wait_days
-                + components.main_freight_days
-                + components.import_clearance_days
-                + components.destination_inland_days,
-            ),
+            components.export_preparation_days
+            + components.origin_inland_days
+            + components.departure_wait_days
+            + components.main_freight_days
+            + components.import_clearance_days
+            + components.destination_inland_days,
             2,
         )
 
@@ -941,7 +968,7 @@ class BehavioralLeadTimeSimulator:
     @staticmethod
     def _run_id(req: GLTGSimulationRequestV2) -> str:
         payload = json.dumps(req.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
-        digest = hashlib.sha1(payload.encode("utf-8")).hexdigest()[:12]
+        digest = hashlib.sha1(payload.encode("utf-8"), usedforsecurity=False).hexdigest()[:12]
         return f"GLTG_{digest}"
 
     @staticmethod

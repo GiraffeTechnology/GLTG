@@ -1,10 +1,4 @@
-"""Regression tests for the demoted deterministic fallback engine.
-
-These exercise the legacy rule-based behavioral simulator, which is no longer
-the primary GLTG model. They run with ``GLTG_EVALUATOR_MODE=fallback`` so the
-v2 endpoints return the deterministic projection rather than the LLM-assisted
-assessment. The LLM-assisted default path is covered in ``test_v2_evaluator.py``.
-"""
+"""Regression tests for the canonical deterministic GLTG engine."""
 
 from __future__ import annotations
 
@@ -17,13 +11,19 @@ from fastapi.testclient import TestClient
 from gltg.api.main import app
 from gltg.behavioral.schemas import GLTGSimulationRequestV2, GLTGSimulationResponseV2
 
-client = TestClient(app)
+client = TestClient(
+    app,
+    headers={
+        "X-Service-Auth": "test-inbound-secret",
+        "X-Service-Tenant-ID": "tenant_default",
+    },
+)
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 
 @pytest.fixture(autouse=True)
 def _force_fallback_mode(monkeypatch):
-    """Pin the demoted deterministic engine for this module's regressions."""
+    """Pin the compatibility alias for deterministic regression coverage."""
     monkeypatch.setenv("GLTG_EVALUATOR_MODE", "fallback")
 
 
