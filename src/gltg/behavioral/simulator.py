@@ -227,6 +227,7 @@ class BehavioralLeadTimeSimulator:
         return sum(
             (
                 components.requirement_confirmation_days,
+                components.material_confirmation_days,
                 components.material_procurement_days,
                 components.preproduction_days,
                 components.capacity_queue_days,
