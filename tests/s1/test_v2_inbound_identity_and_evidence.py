@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from gltg.api.main import app
 from gltg.api import routes
+from gltg.behavioral.schemas import GLTGSimulationRequestV2
 from gltg.services import v2_pipeline
 
 
@@ -91,6 +92,35 @@ def test_openapi_marks_identity_headers_required() -> None:
     headers = {item["name"]: item for item in operation["parameters"]}
     assert headers["X-Service-Tenant-ID"]["required"] is True
     assert headers["X-Service-Auth"]["required"] is True
+
+
+def test_aivan_assessment_scope_is_preserved_in_normalized_and_persisted_input() -> None:
+    request = GLTGSimulationRequestV2.model_validate(
+        _payload(
+            case_context={
+                "assessment_scope": "supplier_candidate",
+                "supplier_id": "SUP-1",
+            }
+        )
+    )
+
+    assert request.case_context.assessment_scope == "supplier_candidate"
+    assert request.model_dump(mode="json")["case_context"] == {
+        "procurement_case_id": None,
+        "rfq_id": None,
+        "quote_id": None,
+        "po_id": None,
+        "buyer_id": None,
+        "supplier_id": "SUP-1",
+        "assessment_scope": "supplier_candidate",
+    }
+
+
+def test_invalid_aivan_assessment_scope_is_rejected() -> None:
+    with pytest.raises(ValueError):
+        GLTGSimulationRequestV2.model_validate(
+            _payload(case_context={"assessment_scope": "untrusted-scope"})
+        )
 
 
 def test_non_ascii_raw_auth_is_401_before_pipeline(
