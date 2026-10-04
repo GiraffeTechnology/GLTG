@@ -108,13 +108,17 @@ class GiraffeDBClient:
         path: str,
         tenant_id: str,
         json_body: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
     ) -> Any:
         url = f"{self.base_url}{path}"
+        headers = self._headers(tenant_id)
+        if idempotency_key:
+            headers["Idempotency-Key"] = idempotency_key
         try:
             response = httpx.request(
                 method,
                 url,
-                headers=self._headers(tenant_id),
+                headers=headers,
                 json=json_body,
                 timeout=self.timeout_seconds,
             )
@@ -166,7 +170,15 @@ class GiraffeDBClient:
     # Run persistence
     # ------------------------------------------------------------------ #
     def persist_gltg_run(self, payload: dict[str, Any], tenant_id: str) -> dict[str, Any]:
-        data = self._request("POST", "/api/data/gltg-simulation-runs", tenant_id, payload)
+        request_payload = dict(payload)
+        idempotency_key = request_payload.pop("idempotency_key", None)
+        data = self._request(
+            "POST",
+            "/api/data/gltg-simulation-runs",
+            tenant_id,
+            request_payload,
+            idempotency_key=idempotency_key,
+        )
         if not isinstance(data, dict) or not data.get("gltg_run_id"):
             raise GiraffeDBMalformedResponse(
                 "gltg run persistence response failed validation (no gltg_run_id)"

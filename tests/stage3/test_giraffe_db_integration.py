@@ -234,6 +234,35 @@ class TestPersistenceTruthfulness:
         request = route.calls[0].request
         assert request.headers["X-Service-Tenant-ID"] == TENANT
         assert request.headers["X-Service-Auth"] == "s3cret"
+        idempotency_key = request.headers["Idempotency-Key"]
+        assert len(idempotency_key) == 40
+        assert all(character in "0123456789abcdef" for character in idempotency_key)
+
+    def test_duplicate_persistence_uses_same_effective_idempotency_key(
+        self, gdb_env, monkeypatch
+    ):
+        monkeypatch.setenv("GLTG_PERSIST_RUNS", "true")
+        payload = _payload(evidence={"use_giraffe_db": False})
+        with respx.mock:
+            route = respx.post(f"{BASE}/api/data/gltg-simulation-runs").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "gltg_run_id": "GDB_SYN_V1_GLTG_000001",
+                        "tenant_id": TENANT,
+                    },
+                )
+            )
+            first = client.post("/v2/lead-time/simulate", json=payload)
+            second = client.post("/v2/lead-time/simulate", json=payload)
+
+        assert first.status_code == second.status_code == 200
+        assert len(route.calls) == 2
+        assert route.calls[0].request.headers["Idempotency-Key"]
+        assert (
+            route.calls[0].request.headers["Idempotency-Key"]
+            == route.calls[1].request.headers["Idempotency-Key"]
+        )
 
     def test_persist_failure_is_truthful_not_success(self, gdb_env, monkeypatch):
         monkeypatch.setenv("GLTG_PERSIST_RUNS", "true")
