@@ -311,6 +311,10 @@ def persist_run(
     components = response.components
     supplier_id = req.supplier.supplier_id
     payload: dict[str, Any] = {
+        # The provider uses this request fingerprint as its effective write
+        # idempotency key. The HTTP client removes it from the JSON body and
+        # sends it only as Idempotency-Key.
+        "idempotency_key": _request_fingerprint(req),
         # PK is assigned by giraffe-db in canonical form; GLTG's internal
         # deterministic run id travels inside output_json.
         "procurement_case_id": req.case_context.procurement_case_id,
