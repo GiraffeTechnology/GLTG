@@ -37,6 +37,7 @@ from ..integrations.giraffe_db_client import (
     GiraffeDBClient,
     GiraffeDBError,
     GiraffeDBMalformedResponse,
+    GiraffeDBNotConfigured,
     GiraffeDBNotFound,
     GiraffeDBUnavailable,
     client_from_env,
@@ -49,6 +50,10 @@ class EvidenceUnavailableError(GLTGError):
 
 class EvidenceAuthError(GLTGError):
     """giraffe-db rejected our service auth or tenant; fail closed."""
+
+
+class EvidenceReferenceError(GLTGError):
+    """A caller-supplied evidence reference was not owned by the bound tenant."""
 
 
 def _warn(code: str, severity: str, message: str) -> GLTGWarningV2:
@@ -149,6 +154,7 @@ def resolve_evidence(
     # stable warning code, a bounded confidence penalty, and a
     # machine-readable status — never invented behavior values.
     summary: dict[str, Any] | None = None
+    verified_observation_ids: set[str] = set()
     behavior_status = "ok"
     try:
         summary = client.get_supplier_behavior_summary(supplier_id, req.tenant_id)
@@ -172,7 +178,16 @@ def resolve_evidence(
         meta["behavior_observation_count"] = observation_count
         snapshot = summary.get("latest_snapshot") or None
         if snapshot and snapshot.get("snapshot_id"):
-            resolved.extra_observation_ids.append(str(snapshot["snapshot_id"]))
+            snapshot_id = str(snapshot["snapshot_id"])
+            resolved.extra_observation_ids.append(snapshot_id)
+            verified_observation_ids.add(snapshot_id)
+            source_ids = snapshot.get("source_observation_ids_json") or []
+            if isinstance(source_ids, list):
+                verified_observation_ids.update(
+                    str(observation_id)
+                    for observation_id in source_ids
+                    if str(observation_id).strip()
+                )
             features = snapshot.get("feature_json") or {}
             supplier_features = req.behavior_features.supplier
             for source_key, target_attr in (
@@ -194,6 +209,12 @@ def resolve_evidence(
             )
         if observation_count == 0:
             behavior_status = "no_observations"
+
+    requested_observation_ids = set(req.source_observation_ids)
+    if requested_observation_ids - verified_observation_ids:
+        raise EvidenceReferenceError(
+            "one or more source observation references are not owned by the authenticated tenant"
+        )
 
     meta["behavior_evidence_status"] = behavior_status
     if behavior_status != "ok":
@@ -427,7 +448,10 @@ def _apply_event(req: GLTGSimulationRequestV2, event: dict[str, Any]) -> bool:
 def run_simulation(
     req: GLTGSimulationRequestV2, *, persist: bool = True
 ) -> GLTGSimulationResponseV2:
-    client = client_from_env()
+    try:
+        client = client_from_env()
+    except GiraffeDBNotConfigured as exc:
+        raise EvidenceUnavailableError(str(exc)) from exc
     resolved = resolve_evidence(req, client)
     response = gltg_evaluator.evaluate(req)
     _apply_evidence_to_response(response, resolved)
@@ -437,7 +461,10 @@ def run_simulation(
 
 
 def run_reforecast(req: GLTGReforecastRequestV2) -> GLTGReforecastResponseV2:
-    client = client_from_env()
+    try:
+        client = client_from_env()
+    except GiraffeDBNotConfigured as exc:
+        raise EvidenceUnavailableError(str(exc)) from exc
 
     base_req = GLTGSimulationRequestV2.model_validate(
         req.model_dump(mode="json", exclude={"events"})
