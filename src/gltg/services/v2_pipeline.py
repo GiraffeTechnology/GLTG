@@ -129,8 +129,13 @@ def resolve_evidence(
         raise GLTGError(f"EVIDENCE_MALFORMED: {exc}") from exc
 
     meta["retrieved"].append("supplier_record")
-    if not req.supplier.name:
-        req.supplier.name = record.get("name_en") or record.get("supplier_name")
+    # Keep display-only profile text in the provider profile. Supplier identity
+    # and a content hash retain provenance without copying it into process input.
+    profile_name = record.get("name_en") or record.get("supplier_name")
+    if isinstance(profile_name, str) and profile_name:
+        meta["supplier_profile_name_sha256"] = hashlib.sha256(
+            profile_name.encode("utf-8")
+        ).hexdigest()
     if record.get("is_synthetic") is True:
         resolved.warnings.append(_warn(
             "SYNTHETIC_EVIDENCE",

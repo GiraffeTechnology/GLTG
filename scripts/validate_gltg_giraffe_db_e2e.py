@@ -238,6 +238,24 @@ def main() -> int:
                 json.dumps(persistence),
             )
 
+            profile_input_ok = False
+            if persisted_id:
+                with sqlite3.connect(str(db_path)) as conn:
+                    row = conn.execute(
+                        "SELECT base_input_json, explanation_json FROM gltg_simulation_runs "
+                        "WHERE gltg_run_id = ?", (persisted_id,),
+                    ).fetchone()
+                if row:
+                    stored_input, stored_explanation = (json.loads(value) for value in row)
+                    supplier_input = stored_input["request_json"]["supplier"]
+                    evidence_meta = stored_explanation.get("evidence", {})
+                    profile_input_ok = (
+                        supplier_input.get("name") is None
+                        and supplier_input.get("supplier_id") == SUPPLIER_ID
+                        and len(evidence_meta.get("supplier_profile_name_sha256", "")) == 64
+                    )
+            check("profile display text stays out of persisted process input", profile_input_ok)
+
             # Determinism of the calculation across repeated calls.
             body2 = client.post(
                 f"{gltg_base}/v2/lead-time/simulate",
@@ -321,6 +339,31 @@ def main() -> int:
                 and reforecast["quantiles"]["p90_days"] >= reforecast["previous_quantiles"]["p90_days"]
                 and reforecast.get("changed_components"),
                 json.dumps(reforecast.get("delta")),
+            )
+
+            reforecast_persistence = reforecast.get("persistence", {})
+            reforecast_id = reforecast_persistence.get("giraffe_db_run_id")
+            reforecast_row_ok = False
+            if reforecast_id:
+                with sqlite3.connect(str(db_path)) as conn:
+                    row = conn.execute(
+                        "SELECT tenant_id, supplier_id, final_p50_days, base_input_json "
+                        "FROM gltg_simulation_runs WHERE gltg_run_id = ?", (reforecast_id,),
+                    ).fetchone()
+                if row:
+                    stored_input = json.loads(row[3])
+                    factors = stored_input["request_json"]["trade_processing_factors"]
+                    reforecast_row_ok = (
+                        row[0] == TENANT and row[1] == SUPPLIER_ID
+                        and abs(float(row[2]) - reforecast["quantiles"]["p50_days"]) < 0.01
+                        and factors["supplier_execution"]["capacity_utilization_ratio"] == 0.95
+                        and factors["logistics_trade"]["freight_space_risk"] == 0.9
+                        and stored_input["reforecast_meta"]["applied_events"] == reforecast["applied_events"]
+                    )
+            check(
+                "reforecast persisted with updated inputs and exact applied-event lineage",
+                reforecast_persistence.get("status") == "persisted" and reforecast_row_ok,
+                json.dumps(reforecast_persistence),
             )
 
             # DB down mid-flight: explicit DB_UNAVAILABLE, no silent fallback.

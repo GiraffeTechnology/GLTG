@@ -17,6 +17,7 @@ The tenant ID is passed per call and propagated as X-Service-Tenant-ID.
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any
 
@@ -69,15 +70,17 @@ class GiraffeDBClient:
         base_url: str,
         service_auth_secret: str | None = None,
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+        tenant_service_auth: dict[str, str] | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self._secret = service_auth_secret
+        self._tenant_secrets = tenant_service_auth
         self.timeout_seconds = timeout_seconds
 
     def __repr__(self) -> str:  # never leak the secret
         return (
             f"GiraffeDBClient(base_url={self.base_url!r}, "
-            f"auth={'***' if self._secret else 'unset'}, "
+            f"auth={'***' if self._secret or self._tenant_secrets else 'unset'}, "
             f"timeout={self.timeout_seconds})"
         )
 
@@ -88,11 +91,16 @@ class GiraffeDBClient:
         bound_tenant = tenant_id.strip()
         if not bound_tenant:
             raise GiraffeDBAuthError("giraffe-db tenant context is required")
-        if not self._secret:
+        secret = self._secret
+        if self._tenant_secrets is not None:
+            secret = self._tenant_secrets.get(bound_tenant)
+        if not secret:
             raise GiraffeDBNotConfigured("giraffe-db service auth is not configured")
+        if not secret.isascii() or any(ord(char) < 33 or ord(char) == 127 for char in secret):
+            raise GiraffeDBNotConfigured("giraffe-db service auth is invalid")
         return {
             "X-Service-Tenant-ID": bound_tenant,
-            "X-Service-Auth": self._secret,
+            "X-Service-Auth": secret,
         }
 
     @staticmethod
@@ -201,7 +209,19 @@ def client_from_env() -> GiraffeDBClient | None:
     if not base_url:
         return None
     service_auth_secret = os.environ.get("GLTG_GIRAFFE_DB_SERVICE_AUTH_SECRET") or None
-    if service_auth_secret is None or not service_auth_secret.strip():
+    tenant_secrets = None
+    raw_tenant_secrets = os.environ.get("GLTG_GIRAFFE_DB_TENANT_SERVICE_AUTH_JSON", "").strip()
+    if raw_tenant_secrets:
+        try:
+            tenant_secrets = json.loads(raw_tenant_secrets)
+        except json.JSONDecodeError:
+            raise GiraffeDBNotConfigured("giraffe-db tenant service auth is invalid") from None
+        if (not isinstance(tenant_secrets, dict) or not tenant_secrets
+                or not all(isinstance(key, str) and key.strip() and isinstance(value, str)
+                           and value and value.isascii() and all(33 <= ord(char) < 127 for char in value)
+                           for key, value in tenant_secrets.items())):
+            raise GiraffeDBNotConfigured("giraffe-db tenant service auth is invalid")
+    if tenant_secrets is None and (service_auth_secret is None or not service_auth_secret.strip()):
         raise GiraffeDBNotConfigured("giraffe-db service auth is not configured")
     timeout_raw = os.environ.get("GLTG_GIRAFFE_DB_TIMEOUT_SECONDS", "")
     try:
@@ -212,6 +232,7 @@ def client_from_env() -> GiraffeDBClient | None:
         base_url=base_url,
         service_auth_secret=service_auth_secret,
         timeout_seconds=timeout,
+        tenant_service_auth=tenant_secrets,
     )
 
 
