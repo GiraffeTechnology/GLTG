@@ -15,6 +15,7 @@ with the clean venv's interpreter.
 from __future__ import annotations
 
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -33,10 +34,16 @@ def free_port() -> int:
         return sock.getsockname()[1]
 
 
-def http_json(url: str, payload: dict | None = None) -> tuple[int, dict]:
+def http_json(
+    url: str,
+    payload: dict | None = None,
+    headers: dict[str, str] | None = None,
+) -> tuple[int, dict]:
     data = json.dumps(payload).encode() if payload is not None else None
+    request_headers = {"content-type": "application/json"} if data else {}
+    request_headers.update(headers or {})
     request = urllib.request.Request(
-        url, data=data, headers={"content-type": "application/json"} if data else {}
+        url, data=data, headers=request_headers
     )
     with urllib.request.urlopen(request, timeout=10) as resp:
         return resp.status, json.loads(resp.read().decode())
@@ -77,6 +84,7 @@ def main() -> int:
             [str(python), "-m", "uvicorn", "gltg.api.main:app",
              "--host", "127.0.0.1", "--port", str(port)],
             cwd=tmp,  # deliberately NOT the repo root: no source-tree fallback
+            env={**os.environ, "GLTG_INBOUND_SERVICE_AUTH_SECRET": "api-only-secret"},
         )
         base = f"http://127.0.0.1:{port}"
         try:
@@ -98,7 +106,15 @@ def main() -> int:
                 failures.append(f"/ready unexpected: HTTP {status} {ready}")
             status, body = http_json(
                 f"{base}/v2/lead-time/simulate",
-                {"request_id": "API-ONLY-1", "order": {"product_type": "t-shirt", "quantity": 1000}},
+                {
+                    "request_id": "API-ONLY-1",
+                    "tenant_id": "api-only-tenant",
+                    "order": {"product_type": "t-shirt", "quantity": 1000},
+                },
+                {
+                    "X-Service-Auth": "api-only-secret",
+                    "X-Service-Tenant-ID": "api-only-tenant",
+                },
             )
             quantiles = body.get("quantiles", {})
             if status != 200 or body.get("evaluation_mode") != "deterministic":
