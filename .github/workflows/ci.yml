@@ -137,7 +137,22 @@ jobs:
     name: Real HTTP E2E vs giraffe-db
     runs-on: ubuntu-latest
     env:
-      GIRAFFE_DB_REVISION: 88b4c660e2aec7479826527456e41ec417dc6e28
+      GIRAFFE_DB_REVISION: ddbadf9038d70045e8ac8dac07903342a4c38d2c
+      LANGUAGE_REVISION: c4efcaea7cddfe3653fda7b7a3d2076b1e3bc302
+      CONSUMER_REVISION: beaec23663e8b8e78f82b4b90cec33db2cd1d283
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: gltg_acceptance
+          MYSQL_USER: gltg_ci
+          MYSQL_PASSWORD: ephemeral-ci-only
+          MYSQL_ROOT_PASSWORD: ephemeral-root-ci-only
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=10s --health-timeout=5s --health-retries=12
     # giraffe-db is private. Missing access or an invalid immutable revision is
     # a failed required integration, never a successful skipped job.
     steps:
@@ -171,15 +186,53 @@ jobs:
       - name: Verify exact giraffe-db revision
         run: test "$(git -C giraffe-db rev-parse HEAD)" = "$GIRAFFE_DB_REVISION"
 
-      - name: Install GLTG + giraffe-db
+      - name: Clone language API
+        uses: actions/checkout@v4
+        with:
+          repository: GiraffeTechnology/giraffe-language-skill
+          ref: ${{ env.LANGUAGE_REVISION }}
+          token: ${{ secrets.GIRAFFE_DB_CI_TOKEN }}
+          path: giraffe-language-skill
+          persist-credentials: false
+
+      - name: Clone selected Aivan consumer
+        uses: actions/checkout@v4
+        with:
+          repository: GiraffeTechnology/aivan
+          ref: ${{ env.CONSUMER_REVISION }}
+          token: ${{ secrets.GIRAFFE_DB_CI_TOKEN }}
+          path: aivan-consumer
+          persist-credentials: false
+
+      - name: Verify language and consumer revisions
+        run: |
+          test "$(git -C giraffe-language-skill rev-parse HEAD)" = "$LANGUAGE_REVISION"
+          test "$(git -C aivan-consumer rev-parse HEAD)" = "$CONSUMER_REVISION"
+
+      - name: Install GLTG + giraffe-db + language API
         run: |
           python -m pip install -e ".[dev]"
-          python -m pip install -e "./giraffe-db[dev]"
+          python -m pip install -e "./giraffe-db[mysql]"
+          python -m pip install -e ./giraffe-language-skill
 
       - name: Real HTTP E2E (GLTG <-> giraffe-db)
         env:
           GIRAFFE_DB_REPO: ${{ github.workspace }}/giraffe-db
-        run: python scripts/validate_gltg_giraffe_db_e2e.py
+          GLTG_ACCEPTANCE_DATABASE_URL: mysql+pymysql://gltg_ci:ephemeral-ci-only@127.0.0.1:3306/gltg_acceptance
+        run: >-
+          python scripts/validate_private_provider_http.py
+          --provider-repo giraffe-db
+          --language-repo giraffe-language-skill
+          --consumer-repo aivan-consumer
+          --output real-http-evidence.json
+
+      - name: Upload sanitized HTTP conclusions
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-http-evidence
+          path: real-http-evidence.json
+          if-no-files-found: ignore
 
   docker:
     name: Docker build + startup smoke

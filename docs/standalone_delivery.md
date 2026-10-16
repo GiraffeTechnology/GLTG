@@ -55,6 +55,14 @@ returned canonical precision, revalidates event-updated inputs, and verifies
 event source references before reforecasting. No statistical coverage or
 real-business accuracy is claimed by this synthetic test.
 
+The required HTTP CI job uses this same runner with an isolated MySQL service,
+the selected immutable provider/language/consumer revisions, and actual
+Alembic migrations. Repository access must be configured through the existing
+`GIRAFFE_DB_CI_TOKEN` secret with read access to those dependencies. Missing
+access, clone/install failure, or a failed HTTP assertion fails the job; skipped
+downstream steps are not success. The sanitized JSON artifact reports the
+actual database, source identities, migration result, checks, and cleanup.
+
 ## Rollback and handoff
 
 Keep the current deployment and at most two verified usable rollback versions,

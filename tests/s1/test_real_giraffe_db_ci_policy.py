@@ -3,9 +3,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-
 WORKFLOW = Path(__file__).parents[2] / ".github" / "workflows" / "ci.yml"
-PINNED_GIRAFFE_DB_REVISION = "88b4c660e2aec7479826527456e41ec417dc6e28"
+PINNED_GIRAFFE_DB_REVISION = "ddbadf9038d70045e8ac8dac07903342a4c38d2c"
 
 
 def _real_http_job() -> str:
@@ -35,4 +34,4 @@ def test_private_checkout_does_not_embed_the_token_and_runs_real_steps() -> None
     assert "persist-credentials: false" in job
     assert 'git -C giraffe-db rev-parse HEAD' in job
     assert 'GIRAFFE_DB_REPO: ${{ github.workspace }}/giraffe-db' in job
-    assert "python scripts/validate_gltg_giraffe_db_e2e.py" in job
+    assert "python scripts/validate_private_provider_http.py" in job
