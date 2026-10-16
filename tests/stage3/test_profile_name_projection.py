@@ -8,7 +8,11 @@ import pytest
 
 from gltg.behavioral.schemas import GLTGSimulationRequestV2
 from gltg.behavioral.simulator import BehavioralLeadTimeSimulator
-from gltg.services.v2_pipeline import _request_fingerprint, persist_run, resolve_evidence
+from gltg.services.v2_pipeline import (
+    _request_fingerprint,
+    persist_run,
+    resolve_evidence,
+)
 
 SUPPLIER_ID = "GDB_SYN_V1_SUP_000001"
 TENANT = "tenant-demo"

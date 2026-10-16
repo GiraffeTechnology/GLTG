@@ -234,3 +234,23 @@ an evaluation clock is rejected rather than ignored. A supplied `deadline_days`
 continues to support clients that already compute a relative target. With an
 explicit evaluation date, the absolute target determines the effective days.
 
+## Rule version 0.4.0 formula parameters
+
+`requirement` accepts `base_clarification_days`,
+`historical_avg_buyer_decision_days`, `requirement_change_buffer_days`,
+`sample_approval_days` and `payment_start_delay_days`. The supplied values
+parameterize PRD sections 6.1 and 6.14. Buyer delay is disclosed in its own
+component and counted once, not added again to clarification.
+
+`material` accepts `lock_confirmation_days`,
+`partial_shortage_procurement_days`, `substitute_material_approval_days`,
+`material_procurement_days`, `default_category_material_days` and
+`uncertainty_multiplier`. A fractional shortage duration is not rounded up to
+an invented one-day floor. `behavior` accepts the explicit
+`historical_quote_accuracy_score` and `source_evidence_score` used by PRD 6.15.
+
+All added numbers are finite and nonnegative; probability/score fields are at
+most one. Supplied zero is a value, not missing data. Omitted parameters retain
+versioned rule priors for compatibility. `explanation_json.prior_policy`
+explicitly distinguishes those priors from observed history and calibration.
+

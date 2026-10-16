@@ -71,9 +71,10 @@ def main() -> int:
             [
                 str(python),
                 "-c",
-                "import gltg.api.main, gltg.integrations.giraffe_db_client; "
-                "print('imports ok')",
+                ("import gltg.api.main, gltg.integrations.giraffe_db_client; "
+                 "print('imports ok')"),
             ],
+            check=False,
             capture_output=True,
             text=True,
         )

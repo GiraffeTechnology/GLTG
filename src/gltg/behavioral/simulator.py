@@ -26,7 +26,7 @@ from .schemas import (
 )
 
 MODEL_VERSION = "gltg-hybrid-v0.1.0"
-RULE_VERSION = "behavior-rules-v0.3.0"
+RULE_VERSION = "behavior-rules-v0.4.0"
 Z80 = 0.8416212335729143
 Z90 = 1.2815515655446004
 SIGMA_MIN = 0.05
@@ -154,6 +154,7 @@ class BehavioralLeadTimeSimulator:
             explanation_json={
                 "summary": self._summary(risk, baseline_source, trade_calc.response_delay_reason_inference),
                 "baseline_source": baseline_source,
+                "prior_policy": "Missing factor parameters use versioned rule priors, not observed history or calibrated accuracy.",
                 "composer": composer,
                 "composition_parameters": {
                     "central_shift_days": round(shift, 2),
@@ -547,8 +548,9 @@ class BehavioralLeadTimeSimulator:
             quote_completeness = _first(behavior.quote_completeness_score, req.behavior_features.supplier.quote_completeness_score, 0.65)
             material_confidence = _first(material.material_availability_confidence, 0.35)
             lead_time_confidence = _first(req.behavior_features.supplier.lead_time_confidence_score, req.supplier.confidence, 0.65)
-            historical_quote_accuracy = _clip(1 - abs(_nz(req.historical_baseline.historical_quoted_vs_actual_error_days, 3.0)) / 14)
-            source_evidence = 0.85 if req.source_observation_ids else 0.35
+            historical_quote_accuracy = _first(behavior.historical_quote_accuracy_score,
+                _clip(1 - abs(_nz(req.historical_baseline.historical_quoted_vs_actual_error_days, 3.0)) / 14))
+            source_evidence = _first(behavior.source_evidence_score, 0.85 if req.source_observation_ids else 0.35)
             score = (
                 0.25 * quote_completeness
                 + 0.20 * material_confidence
@@ -600,7 +602,7 @@ class BehavioralLeadTimeSimulator:
     ) -> None:
         f = req.trade_processing_factors
         components.requirement_confirmation_days = round(
-            3.0 * (1 - _first(f.requirement.requirement_completeness_score, 0.85)),
+            _nz(f.requirement.base_clarification_days, 3.0) * (1 - _first(f.requirement.requirement_completeness_score, 0.85)),
             2,
         )
         material_days = self._material_procurement_days(req)
@@ -666,10 +668,10 @@ class BehavioralLeadTimeSimulator:
             + _nz(f.logistics_trade.trade_compliance_risk) * _nz(f.logistics_trade.manual_review_delay_days), 2
         )
         components.buyer_decision_buffer_days += round(
-            _nz(req.behavior_features.buyer.buyer_decision_delay_score, 0.0) * 5.0
-            + _nz(f.requirement.requirement_volatility_score, 0.0) * 4.0
-            + _nz(f.requirement.sample_approval_delay_score, 0.0) * _nz(f.processing.sample_days, 3.0)
-            + _nz(f.requirement.payment_delay_risk, 0.0) * 3.0,
+            _nz(req.behavior_features.buyer.buyer_decision_delay_score, 0.0) * _nz(f.requirement.historical_avg_buyer_decision_days, 5.0)
+            + _nz(f.requirement.requirement_volatility_score, 0.0) * _nz(f.requirement.requirement_change_buffer_days, 4.0)
+            + _nz(f.requirement.sample_approval_delay_score, 0.0) * _first(f.requirement.sample_approval_days, f.processing.sample_days, 3.0)
+            + _nz(f.requirement.payment_delay_risk, 0.0) * _nz(f.requirement.payment_start_delay_days, 3.0),
             2,
         )
         components.risk_buffer_days += round(6.0 * risk_decomposition.lead_time_uncertainty_risk, 2)
@@ -694,17 +696,21 @@ class BehavioralLeadTimeSimulator:
         if status == "in_stock":
             return 0.0
         if status == "reserved_stock":
-            return 1.0
+            return _nz(material.lock_confirmation_days, 1.0)
         if status == "partial_stock":
+            if material.partial_shortage_procurement_days is not None:
+                return material.partial_shortage_procurement_days
             shortage_ratio = 1 - min(_nz(material.stock_coverage_ratio, 0.5), 1.0)
-            return max(1.0, _nz(material.raw_material_lead_time_estimate_days, 7.0) * shortage_ratio)
+            return _nz(material.raw_material_lead_time_estimate_days, 7.0) * shortage_ratio
         if status == "supplier_confirmation_required":
             return _nz(material.raw_material_lead_time_estimate_days, 7.0)
         if status == "substitute_material_required":
-            return 3.0 + _nz(material.raw_material_lead_time_estimate_days, 7.0)
+            return _nz(material.substitute_material_approval_days, 3.0) + _first(
+                material.material_procurement_days, material.raw_material_lead_time_estimate_days, 7.0)
         if status == "not_available":
             return max(10.0, _nz(material.raw_material_lead_time_estimate_days, 12.0))
-        return 10.0 * (1 + _nz(material.raw_material_lead_time_uncertainty_score, 0.4))
+        return _nz(material.default_category_material_days, 10.0) * _first(
+            material.uncertainty_multiplier, 1 + _nz(material.raw_material_lead_time_uncertainty_score, 0.4))
 
     def _effective_daily_capacity(self, req: GLTGSimulationRequestV2, process_multiplier: float) -> float:
         supplier = req.trade_processing_factors.supplier_execution

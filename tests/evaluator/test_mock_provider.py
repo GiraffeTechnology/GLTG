@@ -5,6 +5,8 @@ from __future__ import annotations
 import pytest
 
 from gltg.evaluator import evaluate
+
+
 def _codes(res) -> set[str]:
     return {w.code for w in res.warnings}
 

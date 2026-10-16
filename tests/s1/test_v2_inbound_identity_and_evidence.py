@@ -7,11 +7,10 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from gltg.api.main import app
 from gltg.api import routes
+from gltg.api.main import app
 from gltg.behavioral.schemas import GLTGSimulationRequestV2
 from gltg.services import v2_pipeline
-
 
 SECRET = "test-inbound-secret"
 TENANT = "tenant-a"

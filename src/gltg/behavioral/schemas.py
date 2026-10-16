@@ -179,6 +179,11 @@ class GLTGBehaviorFeatures(FiniteContractModel):
 
 
 class GLTGRequirementFactors(FiniteContractModel):
+    base_clarification_days: float | None = Field(default=None, ge=0)
+    historical_avg_buyer_decision_days: float | None = Field(default=None, ge=0)
+    requirement_change_buffer_days: float | None = Field(default=None, ge=0)
+    sample_approval_days: float | None = Field(default=None, ge=0)
+    payment_start_delay_days: float | None = Field(default=None, ge=0)
     completed_required_fields: int | None = Field(default=None, ge=0)
     total_required_fields: int | None = Field(default=None, gt=0)
     requirement_completeness_score: float | None = Field(default=None, ge=0, le=1)
@@ -213,6 +218,12 @@ class GLTGSupplierExecutionFactors(FiniteContractModel):
 
 
 class GLTGMaterialFactors(FiniteContractModel):
+    lock_confirmation_days: float | None = Field(default=None, ge=0)
+    partial_shortage_procurement_days: float | None = Field(default=None, ge=0)
+    substitute_material_approval_days: float | None = Field(default=None, ge=0)
+    material_procurement_days: float | None = Field(default=None, ge=0)
+    default_category_material_days: float | None = Field(default=None, ge=0)
+    uncertainty_multiplier: float | None = Field(default=None, ge=0)
     required_material_qty: float | None = Field(default=None, gt=0)
     available_material_qty: float | None = Field(default=None, ge=0)
     material_availability_status: MaterialAvailabilityStatus = "unknown"
@@ -288,6 +299,8 @@ class GLTGLogisticsTradeFactors(FiniteContractModel):
 
 
 class GLTGCommunicationBehaviorFactors(FiniteContractModel):
+    historical_quote_accuracy_score: float | None = Field(default=None, ge=0, le=1)
+    source_evidence_score: float | None = Field(default=None, ge=0, le=1)
     current_case_supplier_response_seconds: float | None = Field(default=None, ge=0)
     supplier_historical_response_seconds: float | None = Field(default=None, ge=0)
     pair_historical_response_seconds: float | None = Field(default=None, ge=0)
@@ -493,7 +506,7 @@ class GLTGSimulationResponseV2(FiniteContractModel):
     model_name: str = "behavior-rules-v0.1.0"
     evaluation_mode: str = "deterministic"
     model_version: str = "gltg-hybrid-v0.1.0"
-    rule_version: str = "behavior-rules-v0.3.0"
+    rule_version: str = "behavior-rules-v0.4.0"
     calibration_version: str = "none"
     quantiles: GLTGQuantiles
     components: GLTGComponentBreakdown = Field(default_factory=GLTGComponentBreakdown)

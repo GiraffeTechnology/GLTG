@@ -63,7 +63,7 @@ def test_v2_simulate_success_maps_behavior_outputs():
 
     assert body["ok"] is True
     assert body["model_version"] == "gltg-hybrid-v0.1.0"
-    assert body["rule_version"] == "behavior-rules-v0.3.0"
+    assert body["rule_version"] == "behavior-rules-v0.4.0"
     assert body["quantiles"]["p50_days"] <= body["quantiles"]["p80_days"] <= body["quantiles"]["p90_days"]
     assert body["components"]["supplier_response_buffer_days"] >= 3
     assert body["components"]["supplier_uncertainty_buffer_days"] >= 2
