@@ -209,3 +209,28 @@ provider run ID. The response preserves the original idempotency key for
 reconciliation. Consumers must not confirm a business result while persistence
 is failed, unavailable, or indeterminate.
 
+## Rule version 0.3.0 input derivations
+
+Category-specific requirement forms may provide `completed_required_fields`
+and `total_required_fields`; GLTG computes their completeness ratio and rejects
+conflicting explicit scores. The consumer owns its category's required-field
+definition; GLTG does not replace it with a fixed apparel checklist.
+
+Raw supplier-response timing supports this explicit baseline order:
+supplier history, buyer/supplier-pair history, category, tenant, then a supplied
+global default. Zero current response time is valid. Missing baselines remain
+missing; GLTG does not manufacture historical response records or assume a
+global default that was not supplied. Business-hours timing is independently
+normalized. Conflicting supplied ratios are rejected.
+
+When no effective/nominal/supplier capacity is known, a supplier-provided
+production duration is preserved. Otherwise the explicit category production
+baseline, quantity-band multiplier and process multiplier supply the fallback.
+An explicit logistics disruption buffer is included once in logistics.
+
+All typed v2 numerical values must be finite. `order.evaluation_date` anchors
+an absolute `target_delivery_date` deterministically; a date-only target without
+an evaluation clock is rejected rather than ignored. A supplied `deadline_days`
+continues to support clients that already compute a relative target. With an
+explicit evaluation date, the absolute target determines the effective days.
+

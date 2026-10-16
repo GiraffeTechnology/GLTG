@@ -26,7 +26,7 @@ from .schemas import (
 )
 
 MODEL_VERSION = "gltg-hybrid-v0.1.0"
-RULE_VERSION = "behavior-rules-v0.2.1"
+RULE_VERSION = "behavior-rules-v0.3.0"
 Z80 = 0.8416212335729143
 Z90 = 1.2815515655446004
 SIGMA_MIN = 0.05
@@ -612,13 +612,24 @@ class BehavioralLeadTimeSimulator:
             + (f.processing.color_approval_days if f.processing.color_approval_required and f.processing.color_approval_days else 0.0),
             2,
         )
-        effective_capacity = self._effective_daily_capacity(req, process_multiplier)
-        if req.order.quantity > 0 and effective_capacity <= 0:
+        capacity_known = any(value is not None for value in (
+            f.supplier_execution.effective_daily_capacity,
+            f.supplier_execution.nominal_daily_capacity, req.supplier.capacity_per_day,
+        ))
+        effective_capacity = self._effective_daily_capacity(req, process_multiplier) if capacity_known else None
+        if req.order.quantity > 0 and effective_capacity is not None and effective_capacity <= 0:
             raise GLTGError("CAPACITY_UNAVAILABLE: positive order has no effective production capacity")
-        production_days = (
-            math.ceil(round(req.order.quantity / effective_capacity, 10))
-            if req.order.quantity > 0 else 0
-        )
+        if req.order.quantity == 0:
+            production_days = 0
+        elif effective_capacity is not None:
+            production_days = math.ceil(round(req.order.quantity / effective_capacity, 10))
+        elif req.supplier.production_days is not None:
+            production_days = req.supplier.production_days
+        else:
+            production_days = (
+                _first(f.processing.category_default_production_days, components.production_days)
+                * _nz(f.processing.quantity_band_multiplier, 1) * process_multiplier
+            )
         components.production_days = round(
             _nz(f.processing.setup_days, 0.0)
             + production_days
@@ -649,6 +660,7 @@ class BehavioralLeadTimeSimulator:
         )
         components.import_clearance_days = round(_nz(f.logistics_trade.import_clearance_days, 2.0), 2)
         components.destination_inland_days = round(_nz(f.logistics_trade.destination_inland_days, 2.0), 2)
+        components.logistics_disruption_buffer_days = round(_nz(f.logistics_trade.logistics_disruption_buffer_days), 2)
         components.customs_risk_buffer_days = round(
             _nz(f.logistics_trade.customs_inspection_probability) * _nz(f.logistics_trade.expected_customs_delay_days)
             + _nz(f.logistics_trade.trade_compliance_risk) * _nz(f.logistics_trade.manual_review_delay_days), 2
@@ -674,7 +686,7 @@ class BehavioralLeadTimeSimulator:
             + components.destination_inland_days,
             2,
         )
-        components.logistics_buffer_days += components.customs_risk_buffer_days
+        components.logistics_buffer_days += components.customs_risk_buffer_days + components.logistics_disruption_buffer_days
 
     def _material_procurement_days(self, req: GLTGSimulationRequestV2) -> float:
         material = req.trade_processing_factors.material

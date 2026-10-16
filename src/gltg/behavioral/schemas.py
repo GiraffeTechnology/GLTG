@@ -7,9 +7,16 @@ composition, risk flags, and explanations.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+
+
+class FiniteContractModel(BaseModel):
+    """API model values must have finite numerical representations."""
+
+    model_config = ConfigDict(allow_inf_nan=False)
 
 LeadTimeConfidence = Literal["P50", "P80", "P90"]
 TenantId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -42,7 +49,7 @@ ResponseDelayReason = Literal[
 ]
 
 
-class GLTGCaseContext(BaseModel):
+class GLTGCaseContext(FiniteContractModel):
     procurement_case_id: str | None = None
     rfq_id: str | None = None
     quote_id: str | None = None
@@ -52,7 +59,7 @@ class GLTGCaseContext(BaseModel):
     assessment_scope: Literal["requirement_baseline", "supplier_candidate"] | None = None
 
 
-class GLTGOrderInputV2(BaseModel):
+class GLTGOrderInputV2(FiniteContractModel):
     product_category_id: str | None = None
     product_id: str | None = None
     product_type: str | None = "apparel"
@@ -65,12 +72,25 @@ class GLTGOrderInputV2(BaseModel):
     destination: str | None = None
     logistics_mode: str | None = None
     deadline_days: int | None = Field(default=None, ge=0)
-    target_delivery_date: str | None = None
+    target_delivery_date: date | None = None
+    evaluation_date: date | None = None
     quality_requirement_level: str | None = None
     packaging_requirement_level: str | None = None
 
+    @model_validator(mode="after")
+    def bind_absolute_target(self):
+        if self.target_delivery_date is not None:
+            if self.evaluation_date is not None:
+                days = (self.target_delivery_date - self.evaluation_date).days
+                if days < 0:
+                    raise ValueError("target_delivery_date precedes evaluation_date")
+                self.deadline_days = days
+            elif self.deadline_days is None:
+                raise ValueError("evaluation_date is required for a date-only delivery target")
+        return self
 
-class GLTGSupplierInputV2(BaseModel):
+
+class GLTGSupplierInputV2(FiniteContractModel):
     supplier_id: str | None = None
     name: str | None = None
     capacity_per_day: int | None = Field(default=None, ge=0)
@@ -82,7 +102,7 @@ class GLTGSupplierInputV2(BaseModel):
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
-class GLTGHistoricalBaseline(BaseModel):
+class GLTGHistoricalBaseline(FiniteContractModel):
     baseline_source: str | None = None
     sample_size: int | None = Field(default=None, ge=0)
     baseline_p50_days: float | None = Field(default=None, ge=0)
@@ -92,7 +112,7 @@ class GLTGHistoricalBaseline(BaseModel):
     on_time_delivery_rate: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
-class GLTGSupplierBehaviorFeatures(BaseModel):
+class GLTGSupplierBehaviorFeatures(FiniteContractModel):
     response_delay_ratio: float | None = Field(default=None, ge=0)
     business_hours_delay_ratio: float | None = Field(default=None, ge=0)
     after_hours_response_rate: float | None = Field(default=None, ge=0, le=1)
@@ -112,7 +132,7 @@ class GLTGSupplierBehaviorFeatures(BaseModel):
     price_stability_score: float | None = Field(default=None, ge=0, le=1)
 
 
-class GLTGBuyerBehaviorFeatures(BaseModel):
+class GLTGBuyerBehaviorFeatures(FiniteContractModel):
     buyer_id: str | None = None
     buyer_response_delay_ratio: float | None = Field(default=None, ge=0)
     buyer_decision_delay_score: float | None = Field(default=None, ge=0, le=1)
@@ -129,7 +149,7 @@ class GLTGBuyerBehaviorFeatures(BaseModel):
     no_response_after_quote_rate: float | None = Field(default=None, ge=0, le=1)
 
 
-class GLTGPairBehaviorFeatures(BaseModel):
+class GLTGPairBehaviorFeatures(FiniteContractModel):
     buyer_id: str | None = None
     supplier_id: str | None = None
     window_type: str | None = None
@@ -149,7 +169,7 @@ class GLTGPairBehaviorFeatures(BaseModel):
     on_time_delivery_rate: float | None = Field(default=None, ge=0, le=1)
 
 
-class GLTGBehaviorFeatures(BaseModel):
+class GLTGBehaviorFeatures(FiniteContractModel):
     buyer_snapshot_id: str | None = None
     supplier_snapshot_id: str | None = None
     pair_metric_id: str | None = None
@@ -158,7 +178,9 @@ class GLTGBehaviorFeatures(BaseModel):
     pair: GLTGPairBehaviorFeatures = Field(default_factory=GLTGPairBehaviorFeatures)
 
 
-class GLTGRequirementFactors(BaseModel):
+class GLTGRequirementFactors(FiniteContractModel):
+    completed_required_fields: int | None = Field(default=None, ge=0)
+    total_required_fields: int | None = Field(default=None, gt=0)
     requirement_completeness_score: float | None = Field(default=None, ge=0, le=1)
     requirement_volatility_score: float | None = Field(default=None, ge=0, le=1)
     deadline_strictness_score: float | None = Field(default=None, ge=0, le=1)
@@ -167,8 +189,19 @@ class GLTGRequirementFactors(BaseModel):
     sample_approval_delay_score: float | None = Field(default=None, ge=0, le=1)
     payment_delay_risk: float | None = Field(default=None, ge=0, le=1)
 
+    @model_validator(mode="after")
+    def derive_completeness(self):
+        if self.completed_required_fields is not None and self.total_required_fields is not None:
+            if self.completed_required_fields > self.total_required_fields:
+                raise ValueError("completed required fields cannot exceed total required fields")
+            score = self.completed_required_fields / self.total_required_fields
+            if self.requirement_completeness_score is not None and abs(self.requirement_completeness_score - score) > 1e-9:
+                raise ValueError("requirement completeness conflicts with category-defined counts")
+            self.requirement_completeness_score = score
+        return self
 
-class GLTGSupplierExecutionFactors(BaseModel):
+
+class GLTGSupplierExecutionFactors(FiniteContractModel):
     supplier_execution_mode: SupplierExecutionMode = "unknown"
     in_house_capability_confidence: float | None = Field(default=None, ge=0, le=1)
     upstream_dependency_probability: float | None = Field(default=None, ge=0, le=1)
@@ -179,7 +212,7 @@ class GLTGSupplierExecutionFactors(BaseModel):
     priority_factor: float | None = Field(default=None, ge=0)
 
 
-class GLTGMaterialFactors(BaseModel):
+class GLTGMaterialFactors(FiniteContractModel):
     required_material_qty: float | None = Field(default=None, gt=0)
     available_material_qty: float | None = Field(default=None, ge=0)
     material_availability_status: MaterialAvailabilityStatus = "unknown"
@@ -209,7 +242,9 @@ class GLTGMaterialFactors(BaseModel):
         return self
 
 
-class GLTGProcessingFactors(BaseModel):
+class GLTGProcessingFactors(FiniteContractModel):
+    category_default_production_days: float | None = Field(default=None, ge=0)
+    quantity_band_multiplier: float | None = Field(default=None, ge=0)
     base_category_defect_rate: float | None = Field(default=None, ge=0, le=1)
     new_supplier_flag: bool = False
     material_substitution_flag: bool = False
@@ -232,7 +267,8 @@ class GLTGProcessingFactors(BaseModel):
     rework_days_if_triggered: float | None = Field(default=None, ge=0)
 
 
-class GLTGLogisticsTradeFactors(BaseModel):
+class GLTGLogisticsTradeFactors(FiniteContractModel):
+    logistics_disruption_buffer_days: float | None = Field(default=None, ge=0)
     booking_confirmed: bool = False
     expected_customs_delay_days: float | None = Field(default=None, ge=0)
     manual_review_delay_days: float | None = Field(default=None, ge=0)
@@ -251,7 +287,15 @@ class GLTGLogisticsTradeFactors(BaseModel):
     logistics_disruption_score: float | None = Field(default=None, ge=0, le=1)
 
 
-class GLTGCommunicationBehaviorFactors(BaseModel):
+class GLTGCommunicationBehaviorFactors(FiniteContractModel):
+    current_case_supplier_response_seconds: float | None = Field(default=None, ge=0)
+    supplier_historical_response_seconds: float | None = Field(default=None, ge=0)
+    pair_historical_response_seconds: float | None = Field(default=None, ge=0)
+    category_baseline_response_seconds: float | None = Field(default=None, ge=0)
+    tenant_baseline_response_seconds: float | None = Field(default=None, ge=0)
+    global_default_response_seconds: float | None = Field(default=None, gt=0)
+    current_case_business_hours_response_seconds: float | None = Field(default=None, ge=0)
+    historical_business_hours_response_seconds: float | None = Field(default=None, gt=0)
     supplier_response_delay_ratio: float | None = Field(default=None, ge=0)
     business_hours_delay_ratio: float | None = Field(default=None, ge=0)
     quote_completeness_score: float | None = Field(default=None, ge=0, le=1)
@@ -273,8 +317,34 @@ class GLTGCommunicationBehaviorFactors(BaseModel):
     holiday_calendar_match: float | None = Field(default=None, ge=0, le=1)
     no_clear_reason_signal: float | None = Field(default=None, ge=0, le=1)
 
+    def response_baseline(self):
+        for field_name in (
+            "supplier_historical_response_seconds", "pair_historical_response_seconds",
+            "category_baseline_response_seconds", "tenant_baseline_response_seconds", "global_default_response_seconds",
+        ):
+            seconds = getattr(self, field_name)
+            if seconds is not None and seconds > 0:
+                return field_name, seconds
+        return None, None
 
-class GLTGTradeProcessingFactors(BaseModel):
+    @model_validator(mode="after")
+    def derive_response_ratios(self):
+        _, baseline = self.response_baseline()
+        current = self.current_case_supplier_response_seconds
+        if current is not None and baseline is not None:
+            ratio = current / baseline
+            if self.supplier_response_delay_ratio is not None and abs(self.supplier_response_delay_ratio - ratio) > 1e-9:
+                raise ValueError("supplier response ratio conflicts with timing evidence")
+            self.supplier_response_delay_ratio = ratio
+        if self.current_case_business_hours_response_seconds is not None and self.historical_business_hours_response_seconds is not None:
+            ratio = self.current_case_business_hours_response_seconds / self.historical_business_hours_response_seconds
+            if self.business_hours_delay_ratio is not None and abs(self.business_hours_delay_ratio - ratio) > 1e-9:
+                raise ValueError("business hours response ratio conflicts with timing evidence")
+            self.business_hours_delay_ratio = ratio
+        return self
+
+
+class GLTGTradeProcessingFactors(FiniteContractModel):
     requirement: GLTGRequirementFactors = Field(default_factory=GLTGRequirementFactors)
     supplier_execution: GLTGSupplierExecutionFactors = Field(default_factory=GLTGSupplierExecutionFactors)
     material: GLTGMaterialFactors = Field(default_factory=GLTGMaterialFactors)
@@ -283,14 +353,14 @@ class GLTGTradeProcessingFactors(BaseModel):
     behavior: GLTGCommunicationBehaviorFactors = Field(default_factory=GLTGCommunicationBehaviorFactors)
 
 
-class GLTGSimulationConstraintsV2(BaseModel):
+class GLTGSimulationConstraintsV2(FiniteContractModel):
     lead_time_confidence: LeadTimeConfidence = "P80"
     fallback_supplier_policy: str = "recommend_if_risk_high"
     manual_review_policy: str = "required_if_deadline_tight"
     max_acceptable_risk_level: str = "medium"
 
 
-class GLTGEvidenceRequestV2(BaseModel):
+class GLTGEvidenceRequestV2(FiniteContractModel):
     """Explicit opt-in for GLTG to retrieve evidence from giraffe-db.
 
     When ``use_giraffe_db`` is true, GLTG fetches the supplier record and
@@ -302,7 +372,7 @@ class GLTGEvidenceRequestV2(BaseModel):
     use_giraffe_db: bool = False
 
 
-class GLTGSimulationRequestV2(BaseModel):
+class GLTGSimulationRequestV2(FiniteContractModel):
     request_id: str
     tenant_id: TenantId
     source_system: str = "unknown"
@@ -318,7 +388,7 @@ class GLTGSimulationRequestV2(BaseModel):
     constraints: GLTGSimulationConstraintsV2 = Field(default_factory=GLTGSimulationConstraintsV2)
 
 
-class GLTGQuantiles(BaseModel):
+class GLTGQuantiles(FiniteContractModel):
     p50_days: float = Field(ge=0, allow_inf_nan=False)
     p80_days: float = Field(ge=0, allow_inf_nan=False)
     p90_days: float = Field(ge=0, allow_inf_nan=False)
@@ -330,7 +400,8 @@ class GLTGQuantiles(BaseModel):
         return self
 
 
-class GLTGComponentBreakdown(BaseModel):
+class GLTGComponentBreakdown(FiniteContractModel):
+    logistics_disruption_buffer_days: float = 0.0
     customs_risk_buffer_days: float = 0.0
     base_production_days: float = 0.0
     base_procurement_days: float = 0.0
@@ -357,7 +428,7 @@ class GLTGComponentBreakdown(BaseModel):
     risk_buffer_days: float = 0.0
 
 
-class GLTGRiskDecomposition(BaseModel):
+class GLTGRiskDecomposition(FiniteContractModel):
     engagement_risk: float = 0.0
     execution_control_risk: float = 0.0
     upstream_dependency_risk: float = 0.0
@@ -372,13 +443,13 @@ class GLTGRiskDecomposition(BaseModel):
     lead_time_uncertainty_risk: float = 0.0
 
 
-class GLTGResponseDelayReasonInference(BaseModel):
+class GLTGResponseDelayReasonInference(FiniteContractModel):
     most_likely_reason: ResponseDelayReason = "unknown"
     confidence: float = 0.0
     probabilities: dict[str, float] = Field(default_factory=dict)
 
 
-class GLTGRiskOutput(BaseModel):
+class GLTGRiskOutput(FiniteContractModel):
     deadline_risk_level: str = "unknown"
     confidence_score: float | None = None
     fallback_supplier_required: bool = False
@@ -387,13 +458,13 @@ class GLTGRiskOutput(BaseModel):
     selected_confidence_days: float | None = None
 
 
-class GLTGWarningV2(BaseModel):
+class GLTGWarningV2(FiniteContractModel):
     code: str
     severity: str = "medium"
     message: str
 
 
-class GLTGPersistenceRef(BaseModel):
+class GLTGPersistenceRef(FiniteContractModel):
     """Truthful persistence outcome for a run.
 
     status values:
@@ -412,7 +483,7 @@ class GLTGPersistenceRef(BaseModel):
     detail: str | None = None
 
 
-class GLTGSimulationResponseV2(BaseModel):
+class GLTGSimulationResponseV2(FiniteContractModel):
     ok: bool = True
     gltg_run_id: str
     # Evaluator metadata. Deterministic rules are the default engine; the
@@ -422,7 +493,7 @@ class GLTGSimulationResponseV2(BaseModel):
     model_name: str = "behavior-rules-v0.1.0"
     evaluation_mode: str = "deterministic"
     model_version: str = "gltg-hybrid-v0.1.0"
-    rule_version: str = "behavior-rules-v0.2.1"
+    rule_version: str = "behavior-rules-v0.3.0"
     calibration_version: str = "none"
     quantiles: GLTGQuantiles
     components: GLTGComponentBreakdown = Field(default_factory=GLTGComponentBreakdown)
@@ -443,7 +514,7 @@ class GLTGSimulationResponseV2(BaseModel):
     source_observation_ids: list[str] = Field(default_factory=list)
 
 
-class GLTGPathV2(BaseModel):
+class GLTGPathV2(FiniteContractModel):
     path_id: str
     rank: int
     supplier_id: str | None = None
@@ -452,11 +523,11 @@ class GLTGPathV2(BaseModel):
     explanation_json: dict[str, Any] = Field(default_factory=dict)
 
 
-class GLTGPathsEnumerateRequestV2(BaseModel):
+class GLTGPathsEnumerateRequestV2(FiniteContractModel):
     simulations: list[GLTGSimulationRequestV2] = Field(default_factory=list)
 
 
-class GLTGPathsEnumerateResponseV2(BaseModel):
+class GLTGPathsEnumerateResponseV2(FiniteContractModel):
     ok: bool = True
     paths: list[GLTGPathV2] = Field(default_factory=list)
     warnings: list[GLTGWarningV2] = Field(default_factory=list)
@@ -466,7 +537,7 @@ class GLTGReforecastRequestV2(GLTGSimulationRequestV2):
     events: list[dict[str, Any]] = Field(default_factory=list)
 
 
-class GLTGReforecastDeltaV2(BaseModel):
+class GLTGReforecastDeltaV2(FiniteContractModel):
     p50_days: float = 0.0
     p80_days: float = 0.0
     p90_days: float = 0.0
