@@ -74,11 +74,13 @@ def main() -> int:
     db_path = Path(tmpdir.name) / "giraffe_db_e2e.sqlite3"
     database_url = f"sqlite+pysqlite:///{db_path}"
     gdb_secret = secrets.token_hex(16)
+    inbound_secret = secrets.token_hex(16)
 
     gdb_env = {
         **os.environ,
         "GIRAFFE_DB_DATABASE_URL": database_url,
         "GIRAFFE_DB_SERVICE_AUTH_SECRET": gdb_secret,
+        "PYTHONPATH": str(gdb_repo / "src"),
     }
 
     print("== giraffe-db: fresh DB via alembic + supplier import ==")
@@ -111,7 +113,9 @@ def main() -> int:
         **os.environ,
         "GLTG_GIRAFFE_DB_BASE_URL": gdb_base,
         "GLTG_GIRAFFE_DB_SERVICE_AUTH_SECRET": gdb_secret,
+        "GLTG_INBOUND_SERVICE_AUTH_SECRET": inbound_secret,
         "GLTG_PERSIST_RUNS": "true",
+        "PYTHONPATH": str(GLTG_ROOT / "src"),
     }
     gltg_proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "gltg.api.main:app",
@@ -141,6 +145,10 @@ def main() -> int:
         "evidence": {"use_giraffe_db": True},
         "source_observation_ids": [],
     }
+    gltg_headers = {
+        "X-Service-Auth": inbound_secret,
+        "X-Service-Tenant-ID": TENANT,
+    }
 
     try:
         with httpx.Client(timeout=15.0) as client:
@@ -148,6 +156,10 @@ def main() -> int:
                 check("giraffe-db startup", False)
                 return finish()
             gltg_base = f"http://127.0.0.1:{gltg_port}"
+            gltg_headers = {
+                "X-Service-Auth": inbound_secret,
+                "X-Service-Tenant-ID": TENANT,
+            }
             if not wait_healthy(client, f"{gltg_base}/health"):
                 check("GLTG startup", False)
                 return finish()
@@ -177,7 +189,11 @@ def main() -> int:
             )
 
             # The central chain: GLTG v2 with live giraffe-db evidence.
-            response = client.post(f"{gltg_base}/v2/lead-time/simulate", json=payload)
+            response = client.post(
+                f"{gltg_base}/v2/lead-time/simulate",
+                json=payload,
+                headers=gltg_headers,
+            )
             body = response.json() if response.status_code == 200 else {}
             check("GLTG v2 simulate with evidence is 200", response.status_code == 200)
             quantiles = body.get("quantiles", {})
@@ -228,8 +244,91 @@ def main() -> int:
                 json.dumps(persistence),
             )
 
+            profile_input_ok = False
+            if persisted_id:
+                with sqlite3.connect(str(db_path)) as conn:
+                    row = conn.execute(
+                        "SELECT base_input_json, explanation_json FROM gltg_simulation_runs "
+                        "WHERE gltg_run_id = ?", (persisted_id,),
+                    ).fetchone()
+                if row:
+                    stored_input, stored_explanation = (json.loads(value) for value in row)
+                    supplier_input = stored_input["request_json"]["supplier"]
+                    evidence_meta = stored_explanation.get("evidence", {})
+                    profile_input_ok = (
+                        supplier_input.get("name") is None
+                        and supplier_input.get("supplier_id") == SUPPLIER_ID
+                        and len(evidence_meta.get("supplier_profile_name_sha256", "")) == 64
+                    )
+            check("profile display text stays out of persisted process input", profile_input_ok)
+
+            # Optional cross-repository acceptance: exercise Aivan's real thin
+            # HTTP client against this live GLTG process. This is enabled only
+            # when the controller supplies an exact AIVAN_REPO checkout.
+            aivan_repo_raw = os.environ.get("AIVAN_REPO", "").strip()
+            if aivan_repo_raw:
+                aivan_repo = Path(aivan_repo_raw)
+                sys.path.insert(0, str(aivan_repo / "src"))
+                try:
+                    from aivan.integrations.gltg_client import GLTGClient
+
+                    os.environ["GLTG_SERVICE_AUTH_SECRET"] = inbound_secret
+                    aivan_payload = {
+                        **payload,
+                        "request_id": "E2E-AIVAN-GLTG-1",
+                        "source_system": "aivan",
+                        "source_trace_id": "E2E-AIVAN-TRACE-1",
+                        "case_context": {
+                            "assessment_scope": "supplier_candidate",
+                            "supplier_id": SUPPLIER_ID,
+                        },
+                    }
+                    aivan_result = GLTGClient(base_url=gltg_base).simulate_lead_time_v2(
+                        aivan_payload
+                    )
+                    check(
+                        "Aivan real HTTP client calls independent GLTG v2 API",
+                        aivan_result.ok
+                        and aivan_result.status_code == 200
+                        and aivan_result.data is not None
+                        and aivan_result.data.get("quantiles") == quantiles,
+                    )
+                    aivan_persistence = (aivan_result.data or {}).get("persistence", {})
+                    aivan_run_id = aivan_persistence.get("giraffe_db_run_id")
+                    source_identity_ok = False
+                    if aivan_run_id:
+                        conn = sqlite3.connect(str(db_path))
+                        try:
+                            identity_row = conn.execute(
+                                "SELECT base_input_json FROM gltg_simulation_runs "
+                                "WHERE gltg_run_id = ?",
+                                (aivan_run_id,),
+                            ).fetchone()
+                        finally:
+                            conn.close()
+                        if identity_row:
+                            base_input = json.loads(identity_row[0])
+                            stored_request = base_input.get("request_json", {})
+                            source_identity_ok = (
+                                stored_request.get("source_system") == "aivan"
+                                and stored_request.get("source_trace_id")
+                                == "E2E-AIVAN-TRACE-1"
+                                and stored_request.get("case_context", {}).get(
+                                    "assessment_scope"
+                                )
+                                == "supplier_candidate"
+                            )
+                    check(
+                        "Aivan source identity is persisted with the evaluated request",
+                        source_identity_ok,
+                    )
+                finally:
+                    sys.path.remove(str(aivan_repo / "src"))
+
             # Determinism of the calculation across repeated calls.
-            body2 = client.post(f"{gltg_base}/v2/lead-time/simulate", json=payload).json()
+            body2 = client.post(
+                f"{gltg_base}/v2/lead-time/simulate", json=payload, headers=gltg_headers
+            ).json()
             check(
                 "repeated call: identical run id, quantiles and risk",
                 body2.get("gltg_run_id") == body.get("gltg_run_id")
@@ -241,6 +340,10 @@ def main() -> int:
             wrong = client.post(
                 f"{gltg_base}/v2/lead-time/simulate",
                 json={**payload, "request_id": "E2E-GDB-WT", "tenant_id": WRONG_TENANT},
+                headers={
+                    "X-Service-Auth": inbound_secret,
+                    "X-Service-Tenant-ID": WRONG_TENANT,
+                },
             )
             wrong_body = wrong.json()
             check(
@@ -256,6 +359,7 @@ def main() -> int:
                 bad = client.post(
                     f"{gltg_badauth_base}/v2/lead-time/simulate",
                     json={**payload, "request_id": "E2E-GDB-BAD"},
+                    headers=gltg_headers,
                 )
                 check(
                     "wrong GLTG service secret fails closed (502 EVIDENCE_AUTH_FAILED)",
@@ -273,6 +377,7 @@ def main() -> int:
                     "order": {"product_type": "t-shirt", "quantity": 10000, "deadline_days": 2},
                     "constraints": {"manual_review_policy": "required_if_deadline_tight"},
                 },
+                headers=gltg_headers,
             ).json()
             check(
                 "impossible deadline: infeasible + high risk + manual review",
@@ -292,6 +397,7 @@ def main() -> int:
                         {"event_type": "logistics_disruption", "freight_space_risk": 0.9},
                     ],
                 },
+                headers=gltg_headers,
             ).json()
             check(
                 "reforecast applies events and discloses previous vs new quantiles",
@@ -302,12 +408,38 @@ def main() -> int:
                 json.dumps(reforecast.get("delta")),
             )
 
+            reforecast_persistence = reforecast.get("persistence", {})
+            reforecast_id = reforecast_persistence.get("giraffe_db_run_id")
+            reforecast_row_ok = False
+            if reforecast_id:
+                with sqlite3.connect(str(db_path)) as conn:
+                    row = conn.execute(
+                        "SELECT tenant_id, supplier_id, final_p50_days, base_input_json "
+                        "FROM gltg_simulation_runs WHERE gltg_run_id = ?", (reforecast_id,),
+                    ).fetchone()
+                if row:
+                    stored_input = json.loads(row[3])
+                    factors = stored_input["request_json"]["trade_processing_factors"]
+                    reforecast_row_ok = (
+                        row[0] == TENANT and row[1] == SUPPLIER_ID
+                        and abs(float(row[2]) - reforecast["quantiles"]["p50_days"]) < 0.01
+                        and factors["supplier_execution"]["capacity_utilization_ratio"] == 0.95
+                        and factors["logistics_trade"]["freight_space_risk"] == 0.9
+                        and stored_input["reforecast_meta"]["applied_events"] == reforecast["applied_events"]
+                    )
+            check(
+                "reforecast persisted with updated inputs and exact applied-event lineage",
+                reforecast_persistence.get("status") == "persisted" and reforecast_row_ok,
+                json.dumps(reforecast_persistence),
+            )
+
             # DB down mid-flight: explicit DB_UNAVAILABLE, no silent fallback.
             gdb_proc.terminate()
             gdb_proc.wait(timeout=10)
             down = client.post(
                 f"{gltg_base}/v2/lead-time/simulate",
                 json={**payload, "request_id": "E2E-GDB-DOWN"},
+                headers=gltg_headers,
             )
             check(
                 "giraffe-db down: explicit 503 DB_UNAVAILABLE (no silent fallback)",

@@ -22,9 +22,12 @@ from gltg.behavioral.schemas import GLTGSimulationRequestV2
 from gltg.behavioral.simulator import BehavioralLeadTimeSimulator
 from gltg.services.v2_pipeline import _request_fingerprint
 
-client = TestClient(app)
 BASE = "http://giraffe-db.test"
 TENANT = "tenant-demo"
+client = TestClient(
+    app,
+    headers={"X-Service-Auth": "test-inbound-secret", "X-Service-Tenant-ID": TENANT},
+)
 
 DELAY_EVENT = {
     "event_type": "supplier_response_delay",
