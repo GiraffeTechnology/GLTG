@@ -1,0 +1,198 @@
+{
+  "schema": "gltg.private-provider-http-acceptance.v1",
+  "checks": [
+    {
+      "name": "actual Alembic migration chain",
+      "passed": true
+    },
+    {
+      "name": "scenario stock HTTP success",
+      "passed": true
+    },
+    {
+      "name": "scenario stock API persistence readback",
+      "passed": true
+    },
+    {
+      "name": "scenario stock monotonic quantiles",
+      "passed": true
+    },
+    {
+      "name": "scenario stock snapshot lineage",
+      "passed": true
+    },
+    {
+      "name": "scenario pending HTTP success",
+      "passed": true
+    },
+    {
+      "name": "scenario pending API persistence readback",
+      "passed": true
+    },
+    {
+      "name": "scenario pending monotonic quantiles",
+      "passed": true
+    },
+    {
+      "name": "scenario pending snapshot lineage",
+      "passed": true
+    },
+    {
+      "name": "scenario fast HTTP success",
+      "passed": true
+    },
+    {
+      "name": "scenario fast API persistence readback",
+      "passed": true
+    },
+    {
+      "name": "scenario fast monotonic quantiles",
+      "passed": true
+    },
+    {
+      "name": "scenario fast snapshot lineage",
+      "passed": true
+    },
+    {
+      "name": "scenario trader HTTP success",
+      "passed": true
+    },
+    {
+      "name": "scenario trader API persistence readback",
+      "passed": true
+    },
+    {
+      "name": "scenario trader monotonic quantiles",
+      "passed": true
+    },
+    {
+      "name": "scenario trader snapshot lineage",
+      "passed": true
+    },
+    {
+      "name": "pending material widens tail",
+      "passed": true
+    },
+    {
+      "name": "material reason is not low engagement",
+      "passed": true
+    },
+    {
+      "name": "unsupported fast quote requires review",
+      "passed": true
+    },
+    {
+      "name": "repeat canonical numbers and persistence ID",
+      "passed": true
+    },
+    {
+      "name": "repeat canonical numbers and persistence ID",
+      "passed": true
+    },
+    {
+      "name": "repeat canonical numbers and persistence ID",
+      "passed": true
+    },
+    {
+      "name": "repeat canonical numbers and persistence ID",
+      "passed": true
+    },
+    {
+      "name": "repeat canonical numbers and persistence ID",
+      "passed": true
+    },
+    {
+      "name": "effective idempotency prevents duplicate runs",
+      "passed": true
+    },
+    {
+      "name": "negative identity HTTP 401",
+      "passed": true
+    },
+    {
+      "name": "negative identity HTTP 401",
+      "passed": true
+    },
+    {
+      "name": "negative identity HTTP 403",
+      "passed": true
+    },
+    {
+      "name": "raw non-ASCII auth 401",
+      "passed": true
+    },
+    {
+      "name": "rejected identity creates no run",
+      "passed": true
+    },
+    {
+      "name": "provider-side 0 candidate paths",
+      "passed": true
+    },
+    {
+      "name": "provider-side 1 candidate paths",
+      "passed": true
+    },
+    {
+      "name": "provider-side 2 candidate paths",
+      "passed": true
+    },
+    {
+      "name": "provider-side 4 candidate paths",
+      "passed": true
+    },
+    {
+      "name": "unmodified Aivan HTTP client",
+      "passed": true
+    },
+    {
+      "name": "restart replay and API readback",
+      "passed": true
+    },
+    {
+      "name": "provider loss fails closed",
+      "passed": true
+    }
+  ],
+  "sources": {
+    "gltg": {
+      "commit": "61092e07286d3925e1887ffde712105b568d37e2",
+      "tree": "bafdc98c6c901589baee379d534f0337aaf393da",
+      "tracked_dirty": false,
+      "runtime_source_sha256": "a06d2c6f355c065944e3a3b0d8617730e140cce639e9cd8ca2e336b83f048a1f"
+    },
+    "provider": {
+      "commit": "ddbadf9038d70045e8ac8dac07903342a4c38d2c",
+      "tree": "77d4119a03e5c9b70ee81cd8cb1043bdadd7bfc3",
+      "tracked_dirty": false,
+      "runtime_source_sha256": "5456a8bde1c50681625fa425f15bb72c1d9a898023d78747c5d87224a72b89ec"
+    },
+    "language": {
+      "commit": "c4efcaea7cddfe3653fda7b7a3d2076b1e3bc302",
+      "tree": "4259b8ae4ec25ade2eba2d81e53b8cfb5d3a94dc",
+      "tracked_dirty": false,
+      "runtime_source_sha256": "27ae4dc64f213febd2d46c57c6cfa418e1bb26244ed88b25282b6bbdb83e5e61"
+    },
+    "consumer": {
+      "commit": "beaec23663e8b8e78f82b4b90cec33db2cd1d283",
+      "tree": "2452ed6d2e147000b7d6827d9371d06f6122cd44",
+      "tracked_dirty": false,
+      "runtime_source_sha256": "b86da2ae38871d2c1db526fefd9621cb323f5e92befb1c9614afba9cb38b572c"
+    }
+  },
+  "dataset": {
+    "id": "gltg-prd-http-synthetic-v1",
+    "seed": 20261016,
+    "bytes": 1637,
+    "sha256": "15788b6f3ccc5f4847b72486fc7072dc6775d7847be128498c329a41569d83bf"
+  },
+  "production_deployed": false,
+  "real_business_accuracy_claimed": false,
+  "database": "SQLite supplement; not MySQL or CTYun acceptance",
+  "migration_exit": 0,
+  "passed": true,
+  "cleanup": {
+    "child_processes_stopped": true,
+    "temporary_workspace_removed": true
+  }
+}

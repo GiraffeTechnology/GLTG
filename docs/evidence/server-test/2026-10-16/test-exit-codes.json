@@ -1,0 +1,77 @@
+{
+  "schema": "gltg.public-test-exits.v1",
+  "tested_commit": "61092e07286d3925e1887ffde712105b568d37e2",
+  "tracked_dirty": false,
+  "commands": [
+    {
+      "name": "stage7-full-pytest",
+      "exit": 0,
+      "log_bytes": 1023,
+      "log_sha256": "ba5255c3ef6b50df06d9803fa5041a0ee54d10669067c10bdb202b5de549ff9f"
+    },
+    {
+      "name": "stage7-focused",
+      "exit": 0,
+      "log_bytes": 780,
+      "log_sha256": "2acdf23da7f3aa845c479a4ab851042e21e5c44c9c1122aaff97b72bc9e31cd9"
+    },
+    {
+      "name": "stage7-compile",
+      "exit": 0,
+      "log_bytes": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "stage7-bandit-high",
+      "exit": 0,
+      "log_bytes": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "stage7-pip-check",
+      "exit": 0,
+      "log_bytes": 31,
+      "log_sha256": "672aec65a45bed50e70229c70934a7eebf0462595c459b83023027645d57cccf"
+    },
+    {
+      "name": "stage7-data-ids",
+      "exit": 0,
+      "log_bytes": 148,
+      "log_sha256": "cbf46c52afd01277abf847dfcdad215b22b2da84966be11bab2491114c4ed7e2"
+    },
+    {
+      "name": "stage7-edge-cases",
+      "exit": 0,
+      "log_bytes": 1510,
+      "log_sha256": "63c64fcd106ae04ca84e1b5b2922815206da1982d27c1a3d1212a73131717511"
+    },
+    {
+      "name": "stage7-determinism",
+      "exit": 0,
+      "log_bytes": 952,
+      "log_sha256": "539429799218a2af460892aaf239819ec630c79fe6bd360ce8e8fb3e97926e78"
+    },
+    {
+      "name": "stage7-ruff",
+      "exit": 0,
+      "log_bytes": 19,
+      "log_sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "name": "provider-focused-final",
+      "exit": 0,
+      "log_bytes": 652,
+      "log_sha256": "4b7c1a61134922e3e83fdb1588355a7ecea676c5a2c9149a8a157225276ea5fd"
+    }
+  ],
+  "secret_scan": {
+    "scope": "tracked files in selected GLTG and provider candidates",
+    "rules": [
+      "private_key",
+      "github_token",
+      "aws_access_key"
+    ],
+    "findings": [],
+    "limitations": "High-confidence pattern scan; not a proof that all possible secrets are absent."
+  }
+}
