@@ -49,7 +49,7 @@ Fast response is also not automatically good. A fast precise quote with unknown 
 When `trade_processing_factors` are present, GLTG uses the `trade_processing_factor_spread` composer:
 
 ```text
-P50 = baseline P50 + central trade/process shift
+P50 = staged component total + supported engagement delay (counted once)
 P80 = P50 + base spread widened by lead_time_uncertainty_risk
 P90 = P50 + stronger tail widening from lead_time_uncertainty_risk
 ```
@@ -157,4 +157,26 @@ optional material_availability_observations
 ```
 
 GLTG responses preserve `source_observation_ids`, behavior snapshot IDs, `gltg_run_id`, and factor scores so giraffe-db can persist lineage without product repositories copying the model.
+
+## Rule version 0.2.0
+
+The trade-factor path uses the PRD capacity-availability formula without an
+invented minimum utilization allowance. A positive order with zero effective
+capacity fails explicitly rather than returning a finite delivery promise.
+Observed material quantities derive stock coverage; inconsistent explicit
+coverage is rejected. Subprocess days are included once in production; setup
+days are not repeated in preproduction. Buyer decision delay is counted once.
+
+Response speed contributes to delay-reason inference. It does not independently
+add engagement risk or fallback requirements in the trade-factor path. Supplied
+engagement probability remains a separate factor. The legacy composer is
+preserved for requests without trade factors.
+
+The component contract also exposes customs risk buffer, booking confirmation,
+and the PRD rework-probability inputs. The explanation separates median stage
+drivers from tail risk dimensions and records material status and source IDs.
+
+Section 7.2's original weights are retained as a weighted sum clipped to [0, 1],
+matching the previous implementation. Their sum is 1.10; this is not a normalized
+probability mixture. No new calibration or empirical coverage is claimed.
 
