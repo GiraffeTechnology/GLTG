@@ -26,7 +26,7 @@ from .schemas import (
 )
 
 MODEL_VERSION = "gltg-hybrid-v0.1.0"
-RULE_VERSION = "behavior-rules-v0.2.0"
+RULE_VERSION = "behavior-rules-v0.2.1"
 Z80 = 0.8416212335729143
 Z90 = 1.2815515655446004
 SIGMA_MIN = 0.05
@@ -123,6 +123,7 @@ class BehavioralLeadTimeSimulator:
             p50, p80, p90 = self._compose_deterministic_fallback(base_q, shift, uncertainty)
             composer = "deterministic_fallback"
         p50, p80, p90 = self._repair_monotonic(p50, p80, p90)
+        p50, p80, p90 = (round(value, 2) for value in (p50, p80, p90))
 
         selected = {"P50": p50, "P80": p80, "P90": p90}[req.constraints.lead_time_confidence]
         risk = self._risk(req, selected, p50, p80, p90, state)
@@ -805,7 +806,7 @@ class BehavioralLeadTimeSimulator:
             # supported engagement probability may contribute engagement delay.
             engagement = _nz(req.trade_processing_factors.behavior.low_engagement_probability)
             state.supplier_response_buffer += round(5 * engagement, 2)
-            self._explain(state, "response_delay_signal", response_delay_ratio,
+            self._explain(state, "supplier_response_delay_ratio", response_delay_ratio,
                           "reason inference only", "Response speed alone is not an engagement risk score.")
         else:
             self._supplier_response_delay(response_delay_ratio, state)
@@ -1030,8 +1031,8 @@ class BehavioralLeadTimeSimulator:
         state.explanations.append({
             "feature": feature,
             "value": value,
-            "adjustment": adjustment,
-            "reason": reason,
+            "adjustment": "The adjustment to this estimate is " + adjustment.replace("_", " ") + ".",
+            "reason": "This lead-time estimate uses the following evidence: " + reason.replace("_", " "),
         })
 
     @staticmethod

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any
 
 import httpx
@@ -151,8 +152,21 @@ class GiraffeDBClient:
                 raise GiraffeDBIndeterminate("provider write outcome is unknown")
             raise GiraffeDBUnavailable(f"giraffe-db error HTTP {response.status_code}")
         if response.status_code >= 400:
+            fields = []
+            try:
+                rejection = response.json()
+                violations = rejection.get("violations", []) if isinstance(rejection, dict) else []
+                for item in violations if isinstance(violations, list) else []:
+                    field = item.get("field") if isinstance(item, dict) else None
+                    if (isinstance(field, str) and len(field) <= 200
+                            and re.fullmatch(r"(?:gltg_simulation_runs|audit_records)\.[A-Za-z0-9_.\[\]]+", field)
+                            and not any(part in field for part in ("metadata_json", "feature_json", "raw_value_json"))):
+                        fields.append(field)
+            except ValueError:
+                pass
             raise GiraffeDBMalformedResponse(
                 f"giraffe-db rejected the request (HTTP {response.status_code})"
+                + ("; rejected generated schema fields: " + ", ".join(fields[:8]) if fields else "")
             )
         try:
             return response.json()
