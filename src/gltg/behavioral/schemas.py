@@ -422,7 +422,7 @@ class GLTGSimulationResponseV2(BaseModel):
     model_name: str = "behavior-rules-v0.1.0"
     evaluation_mode: str = "deterministic"
     model_version: str = "gltg-hybrid-v0.1.0"
-    rule_version: str = "behavior-rules-v0.2.0"
+    rule_version: str = "behavior-rules-v0.2.1"
     calibration_version: str = "none"
     quantiles: GLTGQuantiles
     components: GLTGComponentBreakdown = Field(default_factory=GLTGComponentBreakdown)

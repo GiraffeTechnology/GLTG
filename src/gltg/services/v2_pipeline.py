@@ -20,6 +20,8 @@ import json
 import os
 from typing import Any
 
+from pydantic import ValidationError
+
 from ..behavioral.schemas import (
     GLTGPersistenceRef,
     GLTGQuantiles,
@@ -546,6 +548,17 @@ def run_reforecast(req: GLTGReforecastRequestV2) -> GLTGReforecastResponseV2:
     unapplied: list[dict[str, Any]] = []
     for event in req.events:
         (applied if _apply_event(updated_req, event) else unapplied).append(event)
+
+    try:
+        updated_req = GLTGSimulationRequestV2.model_validate(updated_req.model_dump(mode="json"))
+    except ValidationError:
+        raise GLTGError("REFORECAST_EVENT_INVALID: event values violate the input contract") from None
+    if applied and updated_req.evidence.use_giraffe_db:
+        for event in applied:
+            for reference in event.get("source_observation_ids", []) or []:
+                if str(reference) not in updated_req.source_observation_ids:
+                    updated_req.source_observation_ids.append(str(reference))
+        resolved = resolve_evidence(updated_req, client)
 
     updated = gltg_evaluator.evaluate(updated_req)
     # Evidence context and penalties apply equally to the updated run.

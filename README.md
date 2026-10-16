@@ -27,9 +27,11 @@ P50/P80/P90 are model estimates. Do not describe them as empirically calibrated 
 
 ## Current implementation snapshot
 
-At main revision `668fe9a9c821c0b13c9402ed2f832faddf933050`, `src/gltg/evaluator/config.py` and `orchestrator.py` select deterministic evaluation by default. `GLTG_EVALUATOR_MODE=llm` is explicit opt-in; a model/provider may be configured without changing the product definition. Existing evaluator, guardrail and fallback implementations are preserved. This observation does not establish that every target requirement is implemented or tested.
+The deterministic engine supplies canonical P50/P80/P90. `GLTG_EVALUATOR_MODE=llm` explicitly enables auxiliary qualitative assessment; provider output cannot replace the numbers. Rule `behavior-rules-v0.2.1` includes staged trade/processing factors, capacity and material quantities, separated median/tail explanations, canonical cutoff precision and validated reforecast inputs. Statistical calibration remains unperformed.
 
 The v1 API and v2 API are described in `docs/api_reference.md` and `docs/gltg_v2_behavioral_contract.md`. Use `docs/integration_guide.md` for the API boundary. Historical engine/CLI fixtures remain useful provider-side assets; they do not authorize embedding the engine in Aivan.
+
+See `docs/standalone_delivery.md` for independent deployment and reproducible real-HTTP acceptance, and `docs/delivery_ledger.md` for stage results and remaining environment-specific verification.
 
 ## License
 

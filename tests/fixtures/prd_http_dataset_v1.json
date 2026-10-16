@@ -1,0 +1,12 @@
+{
+  "dataset_id": "gltg-prd-http-synthetic-v1",
+  "version": 1,
+  "seed": 20261016,
+  "is_synthetic": true,
+  "scenarios": [
+    {"name": "stock", "material": {"material_availability_status": "in_stock", "material_availability_confidence": 1}, "supplier_execution": {"supplier_execution_mode": "in_house_manufacturer", "nominal_daily_capacity": 100, "capacity_utilization_ratio": 0.5}, "behavior": {"supplier_response_delay_ratio": 1, "quote_completeness_score": 1}},
+    {"name": "pending", "material": {"material_availability_status": "supplier_confirmation_required", "material_availability_confidence": 0.3, "raw_material_lead_time_estimate_days": 8, "raw_material_lead_time_uncertainty_score": 0.8, "raw_material_supplier_confirmation_probability": 0.8}, "supplier_execution": {"supplier_execution_mode": "in_house_manufacturer", "nominal_daily_capacity": 100, "capacity_utilization_ratio": 0.5}, "behavior": {"supplier_response_delay_ratio": 4, "most_likely_response_delay_reason": "raw_material_supplier_confirmation", "low_engagement_probability": 0}},
+    {"name": "fast", "material": {"material_availability_status": "unknown", "material_availability_confidence": 0}, "behavior": {"supplier_response_fast": true, "unsupported_precise_leadtime_signal": true, "quote_completeness_score": 0.4}},
+    {"name": "trader", "material": {"material_availability_status": "supplier_confirmation_required", "raw_material_lead_time_estimate_days": 8, "raw_material_lead_time_uncertainty_score": 0.9}, "supplier_execution": {"supplier_execution_mode": "trader", "upstream_dependency_probability": 0.9, "execution_control_score": 0.2}}
+  ]
+}
