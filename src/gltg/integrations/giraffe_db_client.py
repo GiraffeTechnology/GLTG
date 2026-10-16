@@ -50,6 +50,10 @@ class GiraffeDBUnavailable(GiraffeDBError):
     code = CODE_DB_UNAVAILABLE
 
 
+class GiraffeDBIndeterminate(GiraffeDBError):
+    code = "INDETERMINATE_COMMIT"
+
+
 class GiraffeDBAuthError(GiraffeDBError):
     code = CODE_AUTH_FAILED
 
@@ -131,8 +135,10 @@ class GiraffeDBClient:
                 timeout=self.timeout_seconds,
             )
         except (httpx.TimeoutException, httpx.TransportError) as exc:
+            if method == "POST":
+                raise GiraffeDBIndeterminate("provider write outcome is unknown") from exc
             raise GiraffeDBUnavailable(
-                f"giraffe-db unreachable ({type(exc).__name__}) at {url}"
+                f"giraffe-db unreachable ({type(exc).__name__})"
             ) from exc
         if response.status_code in (401, 403):
             raise GiraffeDBAuthError(
@@ -141,6 +147,8 @@ class GiraffeDBClient:
         if response.status_code == 404:
             raise GiraffeDBNotFound(f"giraffe-db has no record at {path}")
         if response.status_code >= 500:
+            if method == "POST":
+                raise GiraffeDBIndeterminate("provider write outcome is unknown")
             raise GiraffeDBUnavailable(f"giraffe-db error HTTP {response.status_code}")
         if response.status_code >= 400:
             raise GiraffeDBMalformedResponse(
@@ -149,6 +157,8 @@ class GiraffeDBClient:
         try:
             return response.json()
         except ValueError as exc:
+            if method == "POST":
+                raise GiraffeDBIndeterminate("provider write acknowledgement is unreadable") from exc
             raise GiraffeDBMalformedResponse("giraffe-db returned non-JSON body") from exc
 
     # ------------------------------------------------------------------ #
@@ -188,11 +198,29 @@ class GiraffeDBClient:
             idempotency_key=idempotency_key,
         )
         if not isinstance(data, dict) or not data.get("gltg_run_id"):
-            raise GiraffeDBMalformedResponse(
+            raise GiraffeDBIndeterminate(
                 "gltg run persistence response failed validation (no gltg_run_id)"
             )
-        self._require_response_tenant(data, tenant_id, "persistence")
+        try:
+            self._require_response_tenant(data, tenant_id, "persistence")
+        except GiraffeDBAuthError as exc:
+            raise GiraffeDBIndeterminate("provider write acknowledgement identity is invalid") from exc
         return data
+
+    def get_case_run(self, case_id: str, run_id: str, tenant_id: str) -> dict[str, Any]:
+        """Read a run through the owning provider's existing transaction-graph API."""
+        data = self._request("GET", f"/api/data/procurement-cases/{case_id}/transaction-graph", tenant_id)
+        if not isinstance(data, dict):
+            raise GiraffeDBMalformedResponse("case readback must be an object")
+        self._require_response_tenant(data.get("procurement_case"), tenant_id, "case readback")
+        rows = data.get("gltg_runs")
+        if not isinstance(rows, list):
+            raise GiraffeDBMalformedResponse("case readback lacks run records")
+        for row in rows:
+            if isinstance(row, dict) and row.get("gltg_run_id") == run_id:
+                self._require_response_tenant(row, tenant_id, "run readback")
+                return row
+        raise GiraffeDBNotFound("run absent from case API readback")
 
     def healthz(self) -> bool:
         try:
@@ -237,17 +265,17 @@ def client_from_env() -> GiraffeDBClient | None:
 
 
 __all__ = [
-    "GiraffeDBClient",
-    "GiraffeDBError",
-    "GiraffeDBNotConfigured",
-    "GiraffeDBUnavailable",
-    "GiraffeDBAuthError",
-    "GiraffeDBNotFound",
-    "GiraffeDBMalformedResponse",
-    "client_from_env",
-    "CODE_DB_UNAVAILABLE",
     "CODE_AUTH_FAILED",
-    "CODE_NOT_FOUND",
+    "CODE_DB_UNAVAILABLE",
     "CODE_MALFORMED",
     "CODE_NOT_CONFIGURED",
+    "CODE_NOT_FOUND",
+    "GiraffeDBAuthError",
+    "GiraffeDBClient",
+    "GiraffeDBError",
+    "GiraffeDBMalformedResponse",
+    "GiraffeDBNotConfigured",
+    "GiraffeDBNotFound",
+    "GiraffeDBUnavailable",
+    "client_from_env",
 ]

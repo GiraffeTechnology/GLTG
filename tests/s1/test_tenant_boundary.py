@@ -12,6 +12,7 @@ from gltg.api.main import app
 from gltg.integrations.giraffe_db_client import (
     GiraffeDBAuthError,
     GiraffeDBClient,
+    GiraffeDBIndeterminate,
     GiraffeDBNotConfigured,
     client_from_env,
 )
@@ -111,7 +112,8 @@ def test_cross_tenant_db_response_is_rejected(operation: str) -> None:
     with respx.mock:
         route = respx.post(f"{BASE}{path}") if operation == "persistence" else respx.get(f"{BASE}{path}")
         route.mock(return_value=httpx.Response(200, json=response_payload))
-        with pytest.raises(GiraffeDBAuthError, match="tenant"):
+        expected_error = GiraffeDBIndeterminate if operation == "persistence" else GiraffeDBAuthError
+        with pytest.raises(expected_error):
             if operation == "supplier":
                 client.get_supplier(SUPPLIER, TENANT)
             elif operation == "summary":

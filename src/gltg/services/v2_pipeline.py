@@ -36,12 +36,14 @@ from ..integrations.giraffe_db_client import (
     GiraffeDBAuthError,
     GiraffeDBClient,
     GiraffeDBError,
+    GiraffeDBIndeterminate,
     GiraffeDBMalformedResponse,
     GiraffeDBNotConfigured,
     GiraffeDBNotFound,
     GiraffeDBUnavailable,
     client_from_env,
 )
+from .factor_evidence import apply_factor_snapshot
 
 
 class EvidenceUnavailableError(GLTGError):
@@ -54,6 +56,10 @@ class EvidenceAuthError(GLTGError):
 
 class EvidenceReferenceError(GLTGError):
     """A caller-supplied evidence reference was not owned by the bound tenant."""
+
+
+class EvidenceMalformedError(GLTGError):
+    """Provider factor values failed schema validation."""
 
 
 def _warn(code: str, severity: str, message: str) -> GLTGWarningV2:
@@ -182,16 +188,30 @@ def resolve_evidence(
         observation_count = int(summary.get("observation_count") or 0)
         meta["behavior_observation_count"] = observation_count
         snapshot = summary.get("latest_snapshot") or None
+        if snapshot is not None and not isinstance(snapshot, dict):
+            raise EvidenceMalformedError("factor snapshot must be an object")
         if snapshot and snapshot.get("snapshot_id"):
+            try:
+                apply_factor_snapshot(req, snapshot)
+            except GiraffeDBAuthError as exc:
+                raise EvidenceAuthError(str(exc)) from exc
+            except GiraffeDBMalformedResponse as exc:
+                raise EvidenceMalformedError(str(exc)) from exc
             snapshot_id = str(snapshot["snapshot_id"])
+            meta["factor_snapshot_id"] = snapshot_id
             resolved.extra_observation_ids.append(snapshot_id)
             verified_observation_ids.add(snapshot_id)
             source_ids = snapshot.get("source_observation_ids_json") or []
+            if not isinstance(source_ids, list) or not all(isinstance(value, str) for value in source_ids):
+                raise EvidenceMalformedError("snapshot source references must be string identifiers")
             if isinstance(source_ids, list):
                 verified_observation_ids.update(
                     str(observation_id)
                     for observation_id in source_ids
                     if str(observation_id).strip()
+                )
+                resolved.extra_observation_ids.extend(
+                    str(value) for value in source_ids if str(value).strip()
                 )
             features = snapshot.get("feature_json") or {}
             supplier_features = req.behavior_features.supplier
@@ -264,6 +284,7 @@ def _apply_evidence_to_response(
     if resolved.force_manual_review:
         response.risk.manual_review_required = True
         response.manual_review_required = True
+        response.assessment_packet.setdefault("manual_review", {})["required"] = True
 
 
 # --------------------------------------------------------------------------- #
@@ -319,7 +340,11 @@ def persist_run(
         # The provider uses this request fingerprint as its effective write
         # idempotency key. The HTTP client removes it from the JSON body and
         # sends it only as Idempotency-Key.
-        "idempotency_key": _request_fingerprint(req),
+        "idempotency_key": hashlib.sha256(json.dumps({
+            "input": _request_fingerprint(req), "model": response.model_version,
+            "rules": response.rule_version, "calibration": response.calibration_version,
+            "reforecast": reforecast_meta,
+        }, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
         # PK is assigned by giraffe-db in canonical form; GLTG's internal
         # deterministic run id travels inside output_json.
         "procurement_case_id": req.case_context.procurement_case_id,
@@ -347,6 +372,12 @@ def persist_run(
             "warnings": [w.model_dump(mode="json") for w in response.warnings],
             "source_observation_ids": response.source_observation_ids,
             "evaluation_mode": response.evaluation_mode,
+            "components": response.components.model_dump(mode="json"),
+            "risk_decomposition": response.risk_decomposition.model_dump(mode="json"),
+            "response_delay_reason_inference": response.response_delay_reason_inference.model_dump(mode="json"),
+            "assessment_packet": response.assessment_packet,
+            "model_version": response.model_version,
+            "rule_version": response.rule_version,
         },
         "base_production_days": components.base_production_days,
         "base_procurement_days": components.base_procurement_days,
@@ -364,6 +395,13 @@ def persist_run(
     payload = {key: value for key, value in payload.items() if value is not None}
     try:
         stored = client.persist_gltg_run(payload, req.tenant_id)
+    except GiraffeDBIndeterminate:
+        response.persistence = GLTGPersistenceRef(
+            status="indeterminate", detail="INDETERMINATE_COMMIT: reconcile using the original idempotency key",
+            idempotency_key=payload["idempotency_key"], readback_status="unavailable",
+        )
+        response.warnings.append(_warn("INDETERMINATE_COMMIT", "high", "Run write outcome is unknown; reconcile before retrying with the same key."))
+        return
     except GiraffeDBError as exc:
         response.persistence = GLTGPersistenceRef(
             status="failed", detail=f"{exc.code}: {exc}"
@@ -374,10 +412,29 @@ def persist_run(
             f"giraffe-db run persistence failed ({exc.code}); result returned without a stored run.",
         ))
         return
+    if req.case_context.procurement_case_id:
+        try:
+            readback = client.get_case_run(
+                req.case_context.procurement_case_id, str(stored["gltg_run_id"]), req.tenant_id
+            )
+            if any(readback.get(key) != payload[key] for key in (
+                "base_input_json", "output_json", "final_p50_days", "final_p80_days", "final_p90_days"
+            )):
+                raise GiraffeDBMalformedResponse("persisted run differs from evaluated result")
+        except GiraffeDBError:
+            response.persistence = GLTGPersistenceRef(
+                status="indeterminate", giraffe_db_run_id=str(stored["gltg_run_id"]),
+                detail="INDETERMINATE_COMMIT: write acknowledged but API readback was not verified",
+                idempotency_key=payload["idempotency_key"], readback_status="unavailable",
+            )
+            response.warnings.append(_warn("INDETERMINATE_COMMIT", "high", "Run write was acknowledged but readback requires reconciliation."))
+            return
     response.persistence = GLTGPersistenceRef(
         status="persisted",
         persisted_to_giraffe_db=True,
         giraffe_db_run_id=str(stored["gltg_run_id"]),
+        idempotency_key=payload["idempotency_key"],
+        readback_status="verified" if req.case_context.procurement_case_id else "not_available_without_case",
     )
 
 

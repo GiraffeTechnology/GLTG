@@ -8,7 +8,7 @@ delivery work. Historical PRs are implementation inputs, not completion claims.
 | --- | --- | --- | --- |
 | 1 | Compatible candidate integration | Reconcile PRs 17 and 19 with current main; preserve tenant credentials, profile projection, assessment scope, canonical calculation and persistence idempotency; 374 tests passed, compile/pip check, five-run determinism and supplier cases passed | Verified locally; PR publication pending |
 | 2 | Factor formulas and explanations | Capacity, material quantity coverage, engagement separation, booking/customs/rework formulas, component accounting and median/tail explanations; new regression vectors RED 10 failed/1 passed, GREEN 11 passed; full suite 385 passed; focused Ruff and high-severity Bandit passed | Verified locally |
-| 3 | Private-data mapping and durable run results | Map versioned evidence into factor inputs; persist and read back through the provider API; distinguish failed and unknown writes | Pending |
+| 3 | Private-data mapping and durable run results | Validate and map snapshot factors/source IDs, persist complete evaluated results, scope replay by rule version, API case-graph readback, distinguish unknown writes; RED 7 failed/1 passed, GREEN 8 passed; full suite 393 passed | Verified locally; real HTTP in progress |
 | 4 | Independent service acceptance and consumer handoff | Execute HTTP, negative identity, recovery and restart checks against selected actual services; publish precise consumer contract and results | Pending |
 
 Statistical calibration requires sufficient observed outcomes as specified in
