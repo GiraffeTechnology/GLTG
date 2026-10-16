@@ -27,7 +27,7 @@ P50/P80/P90 are model estimates. Do not describe them as empirically calibrated 
 
 ## Current implementation snapshot
 
-The deterministic engine supplies canonical P50/P80/P90. `GLTG_EVALUATOR_MODE=llm` explicitly enables auxiliary qualitative assessment; provider output cannot replace the numbers. Rule `behavior-rules-v0.3.0` includes staged trade/processing factors, capacity and material quantities, derived requirement/response ratios, separated median/tail explanations, canonical cutoff precision and validated reforecast inputs. Statistical calibration remains unperformed.
+The deterministic engine supplies canonical P50/P80/P90. `GLTG_EVALUATOR_MODE=llm` explicitly enables auxiliary qualitative assessment; provider output cannot replace the numbers. Rule `behavior-rules-v0.4.0` includes staged trade/processing factors, capacity and material quantities, derived requirement/response ratios, explicit category/buyer/material duration parameters, separated median/tail explanations, canonical cutoff precision and validated reforecast inputs. Statistical calibration remains unperformed.
 
 The v1 API and v2 API are described in `docs/api_reference.md` and `docs/gltg_v2_behavioral_contract.md`. Use `docs/integration_guide.md` for the API boundary. Historical engine/CLI fixtures remain useful provider-side assets; they do not authorize embedding the engine in Aivan.
 

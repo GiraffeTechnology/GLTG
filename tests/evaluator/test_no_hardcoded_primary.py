@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import gltg.evaluator.fallback_rules as fallback_rules
-from gltg.evaluator import evaluate
+from gltg.evaluator import evaluate, fallback_rules
 
 
 def _spy_on_simulator(monkeypatch):

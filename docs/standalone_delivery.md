@@ -50,10 +50,17 @@ effective idempotency, 401/403/raw non-ASCII rejection, zero writes on rejected
 identity, provider-side 0/1/2/4 path comparisons, the Aivan client, DB/GLTG
 restart readback, provider loss and child-process/workspace cleanup.
 
-Rule `behavior-rules-v0.2.1` additionally binds deadline feasibility to the
+Rules from `behavior-rules-v0.2.1` additionally bind deadline feasibility to the
 returned canonical precision, revalidates event-updated inputs, and verifies
 event source references before reforecasting. No statistical coverage or
 real-business accuracy is claimed by this synthetic test.
+
+Rule `behavior-rules-v0.4.0` accepts the PRD's explicit category/material and
+buyer timing parameters and quote-accuracy/evidence scores. Supplied zero and
+fractional durations are preserved. Missing parameters retain documented
+versioned rule priors; those priors are not observed supplier/buyer history or
+measured accuracy. Buyer delay is reported separately and counted once, rather
+than included in both clarification and the buyer component.
 
 The required HTTP CI job uses this same runner with an isolated MySQL service,
 the selected immutable provider/language/consumer revisions, and actual

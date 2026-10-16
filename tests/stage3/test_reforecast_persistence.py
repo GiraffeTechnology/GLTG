@@ -108,7 +108,7 @@ def test_replaying_persisted_request_reproduces_output(persisted) -> None:
 
 
 def test_original_request_not_mutated(persisted) -> None:
-    payload, original_snapshot, _, stored = persisted
+    payload, original_snapshot, _, _stored = persisted
     assert payload == original_snapshot
     # And the persisted request is genuinely different from the original input
     assert (

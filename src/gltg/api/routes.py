@@ -8,9 +8,9 @@ from typing import Annotated
 from fastapi import APIRouter, Header
 
 from ..behavioral.schemas import (
-    GLTGPathV2,
     GLTGPathsEnumerateRequestV2,
     GLTGPathsEnumerateResponseV2,
+    GLTGPathV2,
     GLTGReforecastRequestV2,
     GLTGReforecastResponseV2,
     GLTGSimulationRequestV2,
@@ -18,9 +18,9 @@ from ..behavioral.schemas import (
 )
 from ..evaluator.config import load_settings
 from ..integrations.giraffe_db_client import GiraffeDBNotConfigured, client_from_env
-from ..version import __version__
 from ..services import engine_adapter
 from ..services.v2_pipeline import run_reforecast, run_simulation
+from ..version import __version__
 from .schemas import (
     HealthResponse,
     LeadTimeEstimateRequest,
