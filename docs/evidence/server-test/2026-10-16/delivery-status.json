@@ -1,0 +1,96 @@
+{
+  "schema": "gltg.delivery-status.v1",
+  "candidate": {
+    "commit": "61092e07286d3925e1887ffde712105b568d37e2",
+    "tree": "bafdc98c6c901589baee379d534f0337aaf393da",
+    "tracked_dirty": false,
+    "runtime_source_sha256": "a06d2c6f355c065944e3a3b0d8617730e140cce639e9cd8ca2e336b83f048a1f"
+  },
+  "sources": {
+    "gltg": {
+      "commit": "61092e07286d3925e1887ffde712105b568d37e2",
+      "tree": "bafdc98c6c901589baee379d534f0337aaf393da",
+      "tracked_dirty": false,
+      "runtime_source_sha256": "a06d2c6f355c065944e3a3b0d8617730e140cce639e9cd8ca2e336b83f048a1f"
+    },
+    "provider": {
+      "commit": "ddbadf9038d70045e8ac8dac07903342a4c38d2c",
+      "tree": "77d4119a03e5c9b70ee81cd8cb1043bdadd7bfc3",
+      "tracked_dirty": false,
+      "runtime_source_sha256": "5456a8bde1c50681625fa425f15bb72c1d9a898023d78747c5d87224a72b89ec"
+    },
+    "language": {
+      "commit": "c4efcaea7cddfe3653fda7b7a3d2076b1e3bc302",
+      "tree": "4259b8ae4ec25ade2eba2d81e53b8cfb5d3a94dc",
+      "tracked_dirty": false,
+      "runtime_source_sha256": "27ae4dc64f213febd2d46c57c6cfa418e1bb26244ed88b25282b6bbdb83e5e61"
+    },
+    "consumer": {
+      "commit": "beaec23663e8b8e78f82b4b90cec33db2cd1d283",
+      "tree": "2452ed6d2e147000b7d6827d9371d06f6122cd44",
+      "tracked_dirty": false,
+      "runtime_source_sha256": "b86da2ae38871d2c1db526fefd9621cb323f5e92befb1c9614afba9cb38b572c"
+    }
+  },
+  "dataset": {
+    "id": "gltg-prd-http-synthetic-v1",
+    "seed": 20261016,
+    "bytes": 1637,
+    "sha256": "15788b6f3ccc5f4847b72486fc7072dc6775d7847be128498c329a41569d83bf"
+  },
+  "rule_version": "behavior-rules-v0.4.0",
+  "unit_tests": {
+    "passed": 419,
+    "skipped": 0
+  },
+  "provider_focused_tests": {
+    "passed": 67
+  },
+  "http_supplement_checks": 38,
+  "database_used_for_supplement": "SQLite supplement; not MySQL or CTYun acceptance",
+  "ci": {
+    "run_id": 38834732479,
+    "url": "https://github.com/GiraffeTechnology/GLTG/actions/runs/38834732479",
+    "conclusions": [
+      {
+        "name": "Docker build + startup smoke",
+        "conclusion": "success"
+      },
+      {
+        "name": "Test GLTG (py3.12)",
+        "conclusion": "success"
+      },
+      {
+        "name": "Real HTTP E2E vs giraffe-db",
+        "conclusion": "failure"
+      },
+      {
+        "name": "Test GLTG (py3.13)",
+        "conclusion": "success"
+      },
+      {
+        "name": "Test GLTG (py3.11)",
+        "conclusion": "success"
+      }
+    ]
+  },
+  "module_boundary": "Independent GLTG process and HTTP API; selected Aivan client calls HTTP.",
+  "code_repaired": true,
+  "candidate_jointly_verified_on_mysql": false,
+  "merged_mainline_delivered": false,
+  "production_deployed": false,
+  "full_aivan_business_workflow_verified": false,
+  "real_business_accuracy_claimed": false,
+  "blockers": [
+    "Configured application DB account cannot create the isolated acceptance schema (MySQL 1044). An existing authorized isolated test schema/profile is needed.",
+    "Required private-repository CI read credential is not configured. Clone/install/HTTP steps are skipped after a failed preflight, not passed."
+  ],
+  "rollback": {
+    "production_changed": false,
+    "active_version_preserved": true,
+    "target_temporary_processes_and_workspaces_removed": true,
+    "latest_local_http_cleanup_passed": true,
+    "first_failed_local_scratch_retained": true,
+    "first_scratch_cleanup_disposition": "Cleanup command was rejected by platform policy; no alternative deletion was attempted."
+  }
+}

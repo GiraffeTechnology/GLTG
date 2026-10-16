@@ -1,0 +1,352 @@
+{
+  "schema": "gltg.target-attempt-summary.v1",
+  "attempts": [
+    {
+      "utc": "2026-10-16T00:52:48.699829+00:00",
+      "commit": "ffb1a0b76160f8398ace4a653f48dec7384041e1",
+      "tree": "b1036f4356a4474ae8fe40b2e00d2cf4f8cf3a17",
+      "archive_verified": true,
+      "checks": [
+        {
+          "name": "existing MySQL provider API contract",
+          "passed": true
+        }
+      ],
+      "production_service_changed": false,
+      "migrations_executed": false,
+      "new_sql_connection_created": false,
+      "database_type": "mysql+pymysql",
+      "mem_available_before_bytes": 73658368,
+      "failure_type": "RuntimeError",
+      "stable_code": "insufficient_memory_for_bounded_sidecar",
+      "cleanup": {
+        "candidate_unit_stopped": true,
+        "workspace_removed": true,
+        "secret_file_removed": true
+      },
+      "passed": false,
+      "archive_sha256": "4bedcf78df7814d4f5ee34686a8b92d9e01e2f79559e1b8327692374d99df3b3",
+      "archive_bytes": 491520,
+      "remote_script_sha256": "2faa5a514df251fc0e17c41c6a0d2165a97ccc73ad8a9e1e0bcc08402977c27c"
+    },
+    {
+      "utc": "2026-10-16T01:02:02.854679+00:00",
+      "commit": "d63482e0535f77f2ecdc6dc5a75efade4850a3b4",
+      "tree": "b13d2169464f8b231d1c0f0d04ed6194fa202199",
+      "archive_verified": true,
+      "checks": [
+        {
+          "name": "existing MySQL provider API contract",
+          "passed": true
+        },
+        {
+          "name": "bounded candidate startup",
+          "passed": false
+        }
+      ],
+      "production_service_changed": false,
+      "migrations_executed": false,
+      "new_sql_connection_created": false,
+      "database_type": "mysql+pymysql",
+      "mem_available_before_bytes": 346664960,
+      "bounded_memory_max_bytes": 67108864,
+      "unit_result": "Result=success\nExecMainStatus=0",
+      "failure_type": "RuntimeError",
+      "stable_code": "bounded_candidate_startup_failed",
+      "cleanup": {
+        "candidate_unit_stopped": true,
+        "workspace_removed": true,
+        "secret_file_removed": true
+      },
+      "passed": false,
+      "archive_sha256": "ebb2e304c157b788bc930d153a5fe77f311098d870012040511da419238d7a8a",
+      "archive_bytes": 491520,
+      "remote_script_sha256": "7cdf8c3845539083e926d466dea8250f5242d2ee97d99ba076c93b31c87b0c63"
+    },
+    {
+      "utc": "2026-10-16T01:04:54.323857+00:00",
+      "commit": "d63482e0535f77f2ecdc6dc5a75efade4850a3b4",
+      "tree": "b13d2169464f8b231d1c0f0d04ed6194fa202199",
+      "archive_verified": true,
+      "checks": [
+        {
+          "name": "existing MySQL provider API contract",
+          "passed": true
+        },
+        {
+          "name": "bounded candidate startup",
+          "passed": false
+        }
+      ],
+      "production_service_changed": false,
+      "migrations_executed": false,
+      "new_sql_connection_created": false,
+      "database_type": "mysql+pymysql",
+      "mem_available_before_bytes": 350085120,
+      "bounded_memory_max_bytes": 134217728,
+      "unit_result": "Result=exit-code\nExecMainCode=1\nExecMainStatus=1\nMemoryPeak=49852416\nActiveState=failed",
+      "exception_classes": [
+        "ModuleNotFoundError"
+      ],
+      "oom_recorded": false,
+      "failure_type": "RuntimeError",
+      "stable_code": "bounded_candidate_startup_failed",
+      "cleanup": {
+        "candidate_unit_stopped": true,
+        "workspace_removed": true,
+        "secret_file_removed": true
+      },
+      "passed": false,
+      "archive_sha256": "ebb2e304c157b788bc930d153a5fe77f311098d870012040511da419238d7a8a",
+      "archive_bytes": 491520,
+      "remote_script_sha256": "7f241b4a34c61aa5f44c7409f0ff2880a25b9231f5de9bc79c107b6358a5acb2"
+    },
+    {
+      "utc": "2026-10-16T01:06:33.471476+00:00",
+      "commit": "c13e9893546e7786df4fe5ec1de394b88fc5ead8",
+      "tree": "3c2121a3821818e6dbaef87f981c307727dabc25",
+      "archive_verified": true,
+      "checks": [
+        {
+          "name": "existing MySQL provider API contract",
+          "passed": true
+        },
+        {
+          "name": "bounded candidate startup",
+          "passed": false
+        }
+      ],
+      "production_service_changed": false,
+      "migrations_executed": false,
+      "new_sql_connection_created": false,
+      "database_type": "mysql+pymysql",
+      "mem_available_before_bytes": 319811584,
+      "bounded_memory_max_bytes": 134217728,
+      "unit_result": "Result=exit-code\nExecMainCode=1\nExecMainStatus=1\nMemoryPeak=50769920\nActiveState=failed",
+      "exception_classes": [
+        "ModuleNotFoundError"
+      ],
+      "missing_modules": [
+        "httpx"
+      ],
+      "oom_recorded": false,
+      "failure_type": "RuntimeError",
+      "stable_code": "bounded_candidate_startup_failed",
+      "cleanup": {
+        "candidate_unit_stopped": true,
+        "workspace_removed": true,
+        "secret_file_removed": true
+      },
+      "passed": false,
+      "archive_sha256": "b24b8b6792e3938a8a5cacf79a48757854a640cb69343d649ee8419132e595cc",
+      "archive_bytes": 491520,
+      "remote_script_sha256": "a7f11d19941535e2bb9dcd9492ea8fe4d47c95a706de14ec5703f73df7c882ed"
+    },
+    {
+      "utc": "2026-10-16T01:08:17.293576+00:00",
+      "commit": "c13e9893546e7786df4fe5ec1de394b88fc5ead8",
+      "tree": "3c2121a3821818e6dbaef87f981c307727dabc25",
+      "archive_verified": true,
+      "checks": [
+        {
+          "name": "existing MySQL provider API contract",
+          "passed": true
+        },
+        {
+          "name": "bounded candidate startup",
+          "passed": true
+        },
+        {
+          "name": "actual MySQL evidence calculation",
+          "passed": false
+        }
+      ],
+      "production_service_changed": false,
+      "migrations_executed": false,
+      "new_sql_connection_created": false,
+      "database_type": "mysql+pymysql",
+      "mem_available_before_bytes": 349061120,
+      "isolated_httpx_install_exit": 0,
+      "bounded_memory_max_bytes": 134217728,
+      "calculation_error": {
+        "http_status": 502,
+        "code": "EVIDENCE_AUTH_FAILED"
+      },
+      "failure_type": "RuntimeError",
+      "stable_code": "candidate_calculation_failed",
+      "cleanup": {
+        "candidate_unit_stopped": true,
+        "workspace_removed": true,
+        "secret_file_removed": true
+      },
+      "passed": false,
+      "archive_sha256": "b24b8b6792e3938a8a5cacf79a48757854a640cb69343d649ee8419132e595cc",
+      "archive_bytes": 491520,
+      "remote_script_sha256": "4fb63075b02e4b8478eb677470ac59b0f3ee5e8b168cad130f332bf21075e4a0"
+    },
+    {
+      "utc": "2026-10-16T01:11:55.404859+00:00",
+      "commit": "c13e9893546e7786df4fe5ec1de394b88fc5ead8",
+      "tree": "3c2121a3821818e6dbaef87f981c307727dabc25",
+      "archive_verified": true,
+      "checks": [
+        {
+          "name": "existing MySQL provider API contract",
+          "passed": true
+        }
+      ],
+      "production_service_changed": false,
+      "migrations_executed": false,
+      "new_sql_connection_created": false,
+      "database_type": "mysql+pymysql",
+      "mem_available_before_bytes": 235511808,
+      "failure_type": "TimeoutExpired",
+      "cleanup": {
+        "candidate_unit_stopped": true,
+        "provider_unit_stopped": true,
+        "owned_isolated_schema_removed": true,
+        "workspace_removed": true,
+        "secret_file_removed": true
+      },
+      "passed": false,
+      "archive_sha256": "6c06a5c630b6dd43ff9048bfe13157f5d0d6d6c4ebc18e696f6535d8f8846b9d",
+      "archive_bytes": 962560,
+      "remote_script_sha256": "07069baa33a7d4d795ae56ff191780476fc709fb2d323f6718e98b733a43d322"
+    },
+    {
+      "utc": "2026-10-16T01:14:33.528338+00:00",
+      "commit": "c13e9893546e7786df4fe5ec1de394b88fc5ead8",
+      "tree": "3c2121a3821818e6dbaef87f981c307727dabc25",
+      "archive_verified": true,
+      "checks": [
+        {
+          "name": "existing MySQL provider API contract",
+          "passed": true
+        }
+      ],
+      "production_service_changed": false,
+      "migrations_executed": false,
+      "new_sql_connection_created": false,
+      "database_type": "mysql+pymysql",
+      "mem_available_before_bytes": 247885824,
+      "isolated_httpx_install_exit": 0,
+      "runtime_versions": {
+        "fastapi": "0.139.0",
+        "pydantic": "2.13.4",
+        "uvicorn": "0.51.0",
+        "httpx": "0.28.1",
+        "sqlalchemy": "2.0.51",
+        "alembic": "1.18.5",
+        "pymysql": "1.2.0"
+      },
+      "failure_type": "ModuleNotFoundError",
+      "cleanup": {
+        "candidate_unit_stopped": true,
+        "provider_unit_stopped": true,
+        "owned_isolated_schema_removed": true,
+        "workspace_removed": true,
+        "secret_file_removed": true
+      },
+      "passed": false,
+      "archive_sha256": "6c06a5c630b6dd43ff9048bfe13157f5d0d6d6c4ebc18e696f6535d8f8846b9d",
+      "archive_bytes": 962560,
+      "remote_script_sha256": "609b42642cf5013d03ebf8d5a12e172f77859923dd82e72ba11c7a6a683b610f"
+    },
+    {
+      "utc": "2026-10-16T01:15:11.049718+00:00",
+      "commit": "c13e9893546e7786df4fe5ec1de394b88fc5ead8",
+      "tree": "3c2121a3821818e6dbaef87f981c307727dabc25",
+      "archive_verified": true,
+      "checks": [
+        {
+          "name": "existing MySQL provider API contract",
+          "passed": true
+        }
+      ],
+      "production_service_changed": false,
+      "migrations_executed": false,
+      "new_sql_connection_created": true,
+      "database_type": "mysql+pymysql",
+      "mem_available_before_bytes": 255361024,
+      "isolated_httpx_install_exit": 0,
+      "runtime_versions": {
+        "fastapi": "0.139.0",
+        "pydantic": "2.13.4",
+        "uvicorn": "0.51.0",
+        "httpx": "0.28.1",
+        "sqlalchemy": "2.0.51",
+        "alembic": "1.18.5",
+        "pymysql": "1.2.0"
+      },
+      "failure_type": "OperationalError",
+      "cleanup": {
+        "candidate_unit_stopped": true,
+        "provider_unit_stopped": true,
+        "owned_isolated_schema_removed": true,
+        "workspace_removed": true,
+        "secret_file_removed": true
+      },
+      "passed": false,
+      "archive_sha256": "6c06a5c630b6dd43ff9048bfe13157f5d0d6d6c4ebc18e696f6535d8f8846b9d",
+      "archive_bytes": 962560,
+      "remote_script_sha256": "609b42642cf5013d03ebf8d5a12e172f77859923dd82e72ba11c7a6a683b610f"
+    },
+    {
+      "utc": "2026-10-16T01:16:33.656558+00:00",
+      "commit": "c13e9893546e7786df4fe5ec1de394b88fc5ead8",
+      "tree": "3c2121a3821818e6dbaef87f981c307727dabc25",
+      "archive_verified": true,
+      "checks": [
+        {
+          "name": "existing MySQL provider API contract",
+          "passed": true
+        }
+      ],
+      "production_service_changed": false,
+      "migrations_executed": false,
+      "new_sql_connection_created": true,
+      "database_type": "mysql+pymysql",
+      "mem_available_before_bytes": 257355776,
+      "isolated_httpx_install_exit": 0,
+      "runtime_versions": {
+        "fastapi": "0.139.0",
+        "pydantic": "2.13.4",
+        "uvicorn": "0.51.0",
+        "httpx": "0.28.1",
+        "sqlalchemy": "2.0.51",
+        "alembic": "1.18.5",
+        "pymysql": "1.2.0"
+      },
+      "schema_setup_step": "create_owned_schema",
+      "failure_type": "OperationalError",
+      "mysql_error_code": 1044,
+      "cleanup": {
+        "candidate_unit_stopped": true,
+        "provider_unit_stopped": true,
+        "owned_isolated_schema_removed": true,
+        "workspace_removed": true,
+        "secret_file_removed": true
+      },
+      "passed": false,
+      "archive_sha256": "6c06a5c630b6dd43ff9048bfe13157f5d0d6d6c4ebc18e696f6535d8f8846b9d",
+      "archive_bytes": 962560,
+      "remote_script_sha256": "18e8baf8075cb42dba738f91baff86417d67a7c43f1a3507666829a8cd592503"
+    },
+    {
+      "passed": false,
+      "transport_exit": 255,
+      "error_type": "TARGET_EXECUTION_FAILED",
+      "archive_sha256": "4bedcf78df7814d4f5ee34686a8b92d9e01e2f79559e1b8327692374d99df3b3",
+      "archive_bytes": 491520
+    }
+  ],
+  "disposition": "NOT_ACCEPTED_MYSQL_PERMISSION_BLOCKED",
+  "latest_runtime_candidate": "c13e9893546e7786df4fe5ec1de394b88fc5ead8",
+  "final_candidate_target_runtime_executed": false,
+  "notes": [
+    "No production service activation, grant escalation, production-schema migration or protected-port change.",
+    "An earlier attempt created synthetic API records through the existing provider before tenant consistency rejection. No customer sends, orders or payments occurred. Those records were not deleted by guessing ownership.",
+    "Later isolated-schema creation was rejected with MySQL 1044. The selected provider migrations and end-to-end runtime therefore did not execute on MySQL.",
+    "Temporary target candidate units, runtime dependencies, secret files and workspaces were removed."
+  ]
+}

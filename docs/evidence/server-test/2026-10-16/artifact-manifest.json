@@ -1,0 +1,35 @@
+{
+  "schema": "gltg.public-artifact-manifest.v1",
+  "artifacts": [
+    {
+      "path": "ci-steps.json",
+      "bytes": 15851,
+      "sha256": "50b0fa4c46a45374a78cd92461a039f16f650506ec37118c3efd71309abe6d99"
+    },
+    {
+      "path": "delivery-status.json",
+      "bytes": 3503,
+      "sha256": "5ea8d0117591dc9d2932564084de59e5bc4b147477043950b73e221c1dcea39d"
+    },
+    {
+      "path": "http-supplement.json",
+      "bytes": 4879,
+      "sha256": "93ac107e8759f0c52973c73f0e60a94082381ca56542051103c613e979e13b5b"
+    },
+    {
+      "path": "SUMMARY.md",
+      "bytes": 5161,
+      "sha256": "7087fd507f62523064bbef3fc968572c9f4f8da6b9f543f0deb76cb25b6af47d"
+    },
+    {
+      "path": "target-attempts.json",
+      "bytes": 12753,
+      "sha256": "32fdbfd74ee4d839db97b2b093a0e6f1f4b2cfe0b92f71c9e3a58adefb240f65"
+    },
+    {
+      "path": "test-exit-codes.json",
+      "bytes": 2206,
+      "sha256": "e97cb10ba51606dd6b9532a4103e1598a0ae91b83654f9bb8da157d4d19583a3"
+    }
+  ]
+}
