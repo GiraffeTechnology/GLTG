@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse
 from ..errors import GLTGError
 from ..services.v2_pipeline import (
     EvidenceAuthError,
+    EvidenceMalformedError,
     EvidenceReferenceError,
     EvidenceUnavailableError,
 )
@@ -59,6 +60,13 @@ def create_app() -> FastAPI:
             status_code=502,
             content={"error": str(exc), "code": "EVIDENCE_AUTH_FAILED"},
         )
+
+    @app.exception_handler(EvidenceMalformedError)
+    async def _evidence_malformed_handler(request: Request, exc: EvidenceMalformedError) -> JSONResponse:
+        return JSONResponse(status_code=502, content={
+            "error": "Private-data provider supplied invalid factor evidence",
+            "code": "EVIDENCE_MALFORMED",
+        })
 
     # Request-validation failures (DEFECT-API-01): FastAPI's default
     # ``{"detail": [...]}`` body is reshaped into the same

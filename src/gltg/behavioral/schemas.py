@@ -404,6 +404,8 @@ class GLTGPersistenceRef(BaseModel):
     """
 
     status: str = "unavailable"
+    readback_status: str = "not_requested"
+    idempotency_key: str | None = None
     persisted_to_giraffe_db: bool = False
     giraffe_db_run_id: str | None = None
     gltg_behavior_input_id: str | None = None

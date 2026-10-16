@@ -180,3 +180,32 @@ Section 7.2's original weights are retained as a weighted sum clipped to [0, 1],
 matching the previous implementation. Their sum is 1.10; this is not a normalized
 probability mixture. No new calibration or empirical coverage is claimed.
 
+## Private-data evidence and persistence
+
+The authenticated supplier behavior summary may expose the six factor groups
+under `latest_snapshot.feature_json.trade_processing_factors`, or their typed
+fields directly in `feature_json`. GLTG validates the provider values, fills
+only missing caller facts, binds snapshot identity to tenant/supplier, and
+preserves the snapshot ID and its observation IDs. Invalid factor values return
+502 `EVIDENCE_MALFORMED`; mismatched identities fail closed.
+
+Run persistence carries the complete evaluated request, quantiles, components,
+risks, assessment and explanation. The effective idempotency key includes input
+fingerprint, model/rule/calibration versions and reforecast identity, so a new
+rule version cannot silently replay a result from the previous algorithm.
+
+For requests with `case_context.procurement_case_id`, GLTG reads back the run
+through `GET /api/data/procurement-cases/{id}/transaction-graph`, verifies the
+case/run tenant, run ID, full input/output and numerical fields, then reports
+`persistence.readback_status=verified`. This uses the existing provider API;
+GLTG never reads provider business tables directly. Standalone requests without
+a case disclose `not_available_without_case`; their POST acknowledgement is not
+independent readback or restart evidence.
+
+A timeout, server error or unreadable POST acknowledgement can follow a commit.
+It is reported as `status=indeterminate` with `INDETERMINATE_COMMIT`, never as
+proof of zero mutation. Acknowledged writes whose readback fails retain the
+provider run ID. The response preserves the original idempotency key for
+reconciliation. Consumers must not confirm a business result while persistence
+is failed, unavailable, or indeterminate.
+

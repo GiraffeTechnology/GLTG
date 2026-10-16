@@ -237,7 +237,7 @@ class TestPersistenceTruthfulness:
         assert request.headers["X-Service-Tenant-ID"] == TENANT
         assert request.headers["X-Service-Auth"] == "s3cret"
         idempotency_key = request.headers["Idempotency-Key"]
-        assert len(idempotency_key) == 40
+        assert len(idempotency_key) == 64
         assert all(character in "0123456789abcdef" for character in idempotency_key)
 
     def test_duplicate_persistence_uses_same_effective_idempotency_key(
@@ -274,9 +274,9 @@ class TestPersistenceTruthfulness:
                 return_value=httpx.Response(500, json={"error": "boom"})
             )
             body = client.post("/v2/lead-time/simulate", json=payload).json()
-        assert body["persistence"]["status"] == "failed"
+        assert body["persistence"]["status"] == "indeterminate"
         assert body["persistence"]["persisted_to_giraffe_db"] is False
-        assert any(w["code"] == "PERSISTENCE_FAILED" for w in body["warnings"])
+        assert any(w["code"] == "INDETERMINATE_COMMIT" for w in body["warnings"])
 
     def test_duplicate_request_same_internal_run_id(self, gdb_env):
         payload = _payload(evidence={"use_giraffe_db": False})
