@@ -11,7 +11,6 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
-
 LeadTimeConfidence = Literal["P50", "P80", "P90"]
 TenantId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 MaterialAvailabilityStatus = Literal[
@@ -181,6 +180,8 @@ class GLTGSupplierExecutionFactors(BaseModel):
 
 
 class GLTGMaterialFactors(BaseModel):
+    required_material_qty: float | None = Field(default=None, gt=0)
+    available_material_qty: float | None = Field(default=None, ge=0)
     material_availability_status: MaterialAvailabilityStatus = "unknown"
     stock_coverage_ratio: float | None = Field(default=None, ge=0)
     material_availability_confidence: float | None = Field(default=None, ge=0, le=1)
@@ -192,8 +193,28 @@ class GLTGMaterialFactors(BaseModel):
     material_lock_validity_days: float | None = Field(default=None, ge=0)
     historical_material_delay_rate: float | None = Field(default=None, ge=0, le=1)
 
+    @model_validator(mode="after")
+    def derive_stock_coverage(self):
+        if self.required_material_qty is not None and self.available_material_qty is not None:
+            ratio = self.available_material_qty / self.required_material_qty
+            if self.stock_coverage_ratio is not None and abs(self.stock_coverage_ratio - ratio) > 1e-9:
+                raise ValueError("stock_coverage_ratio conflicts with material quantities")
+            self.stock_coverage_ratio = ratio
+        ratio = self.stock_coverage_ratio
+        if self.material_availability_status == "unknown" and ratio is not None:
+            if ratio >= 1:
+                self.material_availability_status = "in_stock"
+            elif ratio > 0:
+                self.material_availability_status = "partial_stock"
+        return self
+
 
 class GLTGProcessingFactors(BaseModel):
+    base_category_defect_rate: float | None = Field(default=None, ge=0, le=1)
+    new_supplier_flag: bool = False
+    material_substitution_flag: bool = False
+    rushed_order_flag: bool = False
+    historical_quality_score: float | None = Field(default=None, ge=0, le=1)
     process_complexity_score: float | None = Field(default=None, ge=0, le=1)
     customization_level_score: float | None = Field(default=None, ge=0, le=1)
     tooling_required: bool = False
@@ -212,6 +233,9 @@ class GLTGProcessingFactors(BaseModel):
 
 
 class GLTGLogisticsTradeFactors(BaseModel):
+    booking_confirmed: bool = False
+    expected_customs_delay_days: float | None = Field(default=None, ge=0)
+    manual_review_delay_days: float | None = Field(default=None, ge=0)
     incoterms: str | None = None
     logistics_mode: str | None = None
     route_baseline_days: float | None = Field(default=None, ge=0)
@@ -307,6 +331,7 @@ class GLTGQuantiles(BaseModel):
 
 
 class GLTGComponentBreakdown(BaseModel):
+    customs_risk_buffer_days: float = 0.0
     base_production_days: float = 0.0
     base_procurement_days: float = 0.0
     requirement_confirmation_days: float = 0.0
@@ -395,7 +420,7 @@ class GLTGSimulationResponseV2(BaseModel):
     model_name: str = "behavior-rules-v0.1.0"
     evaluation_mode: str = "deterministic"
     model_version: str = "gltg-hybrid-v0.1.0"
-    rule_version: str = "behavior-rules-v0.1.0"
+    rule_version: str = "behavior-rules-v0.2.0"
     calibration_version: str = "none"
     quantiles: GLTGQuantiles
     components: GLTGComponentBreakdown = Field(default_factory=GLTGComponentBreakdown)

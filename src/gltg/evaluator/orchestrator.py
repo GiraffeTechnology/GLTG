@@ -5,11 +5,10 @@ path (``GLTG_EVALUATOR_MODE=deterministic``; ``fallback`` is a deprecated
 alias). LLM-assisted evaluation runs only when explicitly selected with
 ``GLTG_EVALUATOR_MODE=llm``:
 
-    request -> provider adapter -> assessment packet
-            -> validator / guardrails -> quantile normalizer
-            -> v2 response (+ optional fallback / manual review)
+    request -> canonical deterministic engine -> v2 response
+            -> optional provider assessment -> qualitative guardrails
 
-GLTG never calls an LLM for calculations unless the operator opted in.
+LLM output never supplies canonical calculations, including in opt-in mode.
 """
 
 from __future__ import annotations
@@ -203,4 +202,4 @@ def evaluate(req: GLTGAssessmentInput) -> GLTGSimulationResponseV2:
     return orchestrator.evaluate(req)
 
 
-__all__ = ["GLTGEvaluatorOrchestrator", "orchestrator", "evaluate"]
+__all__ = ["GLTGEvaluatorOrchestrator", "evaluate", "orchestrator"]

@@ -12,6 +12,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..errors import GLTGError
 from .schemas import (
     GLTGComponentBreakdown,
     GLTGPersistenceRef,
@@ -25,7 +26,7 @@ from .schemas import (
 )
 
 MODEL_VERSION = "gltg-hybrid-v0.1.0"
-RULE_VERSION = "behavior-rules-v0.1.0"
+RULE_VERSION = "behavior-rules-v0.2.0"
 Z80 = 0.8416212335729143
 Z90 = 1.2815515655446004
 SIGMA_MIN = 0.05
@@ -108,7 +109,7 @@ class BehavioralLeadTimeSimulator:
         uncertainty = state.supplier_uncertainty_buffer + state.risk_buffer + trade_calc.uncertainty_buffer_days
         if self._has_trade_processing_factors(req):
             trade_base_days = self._trade_processing_base_days(components)
-            behavioral_shift_days = state.supplier_response_buffer + state.buyer_decision_buffer
+            behavioral_shift_days = state.supplier_response_buffer
             p50, p80, p90 = self._compose_trade_processing_spread(
                 base_q,
                 trade_base_days + behavioral_shift_days,
@@ -171,6 +172,17 @@ class BehavioralLeadTimeSimulator:
                     "quote_confidence_score": trade_calc.quote_confidence_score,
                 },
                 "source_observation_ids": req.source_observation_ids,
+                "material_availability_status": req.trade_processing_factors.material.material_availability_status,
+                "median_drivers": {
+                    name: value for name, value in components.model_dump().items()
+                    if value > 0 and name not in {
+                        "base_production_days", "base_procurement_days", "subprocess_days",
+                        "export_preparation_days", "origin_inland_days", "departure_wait_days",
+                        "main_freight_days", "import_clearance_days", "destination_inland_days",
+                        "customs_risk_buffer_days", "supplier_uncertainty_buffer_days", "risk_buffer_days",
+                    }
+                },
+                "tail_drivers": trade_calc.risk_decomposition.model_dump(),
             },
             warnings=warnings,
             # The v2 pipeline replaces this with the actual persistence outcome.
@@ -256,7 +268,7 @@ class BehavioralLeadTimeSimulator:
         response_inference = self._response_delay_reason_inference(req, execution_control, material_risk)
         capacity_risk = self._capacity_queue_risk(f.supplier_execution.capacity_utilization_ratio)
         process_multiplier = self._process_complexity_multiplier(req)
-        quality_rework_risk = _clip(_nz(f.processing.rework_probability, 0.0))
+        quality_rework_risk = self._rework_probability(req)
         logistics_risk = _clip(
             0.35 * _nz(f.logistics_trade.freight_space_risk, 0.0)
             + 0.25 * _nz(f.logistics_trade.logistics_disruption_score, 0.0)
@@ -417,8 +429,6 @@ class BehavioralLeadTimeSimulator:
             + 0.15 * _first(material.material_availability_confidence, 0.35)
             + 0.15 * (1 - upstream_dependency)
         )
-        if supplier.supplier_execution_mode in TRADER_MODES:
-            score -= 0.12
         return _clip(score)
 
     def _upstream_dependency_probability(self, req: GLTGSimulationRequestV2) -> float:
@@ -602,9 +612,15 @@ class BehavioralLeadTimeSimulator:
             2,
         )
         effective_capacity = self._effective_daily_capacity(req, process_multiplier)
+        if req.order.quantity > 0 and effective_capacity <= 0:
+            raise GLTGError("CAPACITY_UNAVAILABLE: positive order has no effective production capacity")
+        production_days = (
+            math.ceil(round(req.order.quantity / effective_capacity, 10))
+            if req.order.quantity > 0 else 0
+        )
         components.production_days = round(
             _nz(f.processing.setup_days, 0.0)
-            + math.ceil(req.order.quantity / max(effective_capacity, 1.0))
+            + production_days
             + _nz(f.processing.subprocess_days, 0.0),
             2,
         )
@@ -612,7 +628,7 @@ class BehavioralLeadTimeSimulator:
         components.capacity_queue_days = round(4.0 * capacity_risk / max(_nz(f.supplier_execution.priority_factor, 1.0), 0.1), 2)
         components.qc_days = round(max(components.qc_days, 2.0 + 3.0 * _nz(f.processing.qc_intensity_score, 0.0)), 2)
         components.expected_rework_days = round(
-            _nz(f.processing.rework_probability, 0.0) * _nz(f.processing.rework_days_if_triggered, 5.0),
+            self._rework_probability(req) * _nz(f.processing.rework_days_if_triggered, 5.0),
             2,
         )
         components.packaging_days = round(1.0 + 2.0 * _nz(f.requirement.packaging_complexity_score, 0.0), 2)
@@ -620,7 +636,10 @@ class BehavioralLeadTimeSimulator:
         components.origin_inland_days = round(_nz(f.logistics_trade.origin_inland_days, 1.0), 2)
         departure_frequency = _nz(f.logistics_trade.departure_frequency_days, 7.0)
         components.departure_wait_days = round(
-            departure_frequency / 2 + _nz(f.logistics_trade.freight_space_risk, 0.0) * departure_frequency,
+            departure_frequency / 2 + (
+                0 if f.logistics_trade.booking_confirmed else
+                _nz(f.logistics_trade.freight_space_risk, 0.0) * departure_frequency
+            ),
             2,
         )
         components.main_freight_days = round(
@@ -629,6 +648,10 @@ class BehavioralLeadTimeSimulator:
         )
         components.import_clearance_days = round(_nz(f.logistics_trade.import_clearance_days, 2.0), 2)
         components.destination_inland_days = round(_nz(f.logistics_trade.destination_inland_days, 2.0), 2)
+        components.customs_risk_buffer_days = round(
+            _nz(f.logistics_trade.customs_inspection_probability) * _nz(f.logistics_trade.expected_customs_delay_days)
+            + _nz(f.logistics_trade.trade_compliance_risk) * _nz(f.logistics_trade.manual_review_delay_days), 2
+        )
         components.buyer_decision_buffer_days += round(
             _nz(req.behavior_features.buyer.buyer_decision_delay_score, 0.0) * 5.0
             + _nz(f.requirement.requirement_volatility_score, 0.0) * 4.0
@@ -650,6 +673,7 @@ class BehavioralLeadTimeSimulator:
             + components.destination_inland_days,
             2,
         )
+        components.logistics_buffer_days += components.customs_risk_buffer_days
 
     def _material_procurement_days(self, req: GLTGSimulationRequestV2) -> float:
         material = req.trade_processing_factors.material
@@ -671,13 +695,27 @@ class BehavioralLeadTimeSimulator:
 
     def _effective_daily_capacity(self, req: GLTGSimulationRequestV2, process_multiplier: float) -> float:
         supplier = req.trade_processing_factors.supplier_execution
-        if supplier.effective_daily_capacity:
+        if supplier.effective_daily_capacity is not None:
             return supplier.effective_daily_capacity
         nominal = _first(supplier.nominal_daily_capacity, req.supplier.capacity_per_day, DEFAULT_DAILY_CAPACITY)
         capacity_availability = max(0.0, 1 - _nz(supplier.capacity_utilization_ratio, 0.0))
         priority_factor = _nz(supplier.priority_factor, 1.0)
         yield_rate = _first(req.trade_processing_factors.processing.expected_yield_rate, 0.95)
-        return max(1.0, nominal * max(capacity_availability, 0.15) * yield_rate * priority_factor / process_multiplier)
+        return nominal * capacity_availability * yield_rate * priority_factor / process_multiplier
+
+    @staticmethod
+    def _rework_probability(req: GLTGSimulationRequestV2) -> float:
+        processing = req.trade_processing_factors.processing
+        if processing.rework_probability is not None:
+            return processing.rework_probability
+        return _clip(
+            _nz(processing.base_category_defect_rate)
+            + .10 * _nz(req.trade_processing_factors.requirement.quality_requirement_level_score)
+            + .10 * processing.new_supplier_flag
+            + .10 * processing.material_substitution_flag
+            + .05 * processing.rushed_order_flag
+            - .10 * _nz(processing.historical_quality_score)
+        )
 
     def _apply_trade_processing_warnings(
         self,
@@ -690,6 +728,9 @@ class BehavioralLeadTimeSimulator:
         material = req.trade_processing_factors.material
         behavior = req.trade_processing_factors.behavior
         supplier = req.trade_processing_factors.supplier_execution
+        if _nz(req.trade_processing_factors.logistics_trade.trade_compliance_risk) >= .7:
+            state.manual_review_required = True
+            self._warn(state, "TRADE_COMPLIANCE_REVIEW_REQUIRED", "high", "Trade compliance risk requires manual review.")
         if material.material_availability_status in {"unknown", "supplier_confirmation_required", "partial_stock"}:
             self._warn(state, "MATERIAL_AVAILABILITY_UNCERTAIN", "medium", "Material availability is not fully confirmed.")
         if quote_confidence < 0.5:
@@ -759,8 +800,16 @@ class BehavioralLeadTimeSimulator:
             requirement_changes = b.requirement_change_count
             buyer_decision_delay_score = b.buyer_decision_delay_score
 
-        self._supplier_response_delay(response_delay_ratio, state)
-        self._business_hours_delay(business_hours_delay_ratio, state)
+        if self._has_trade_processing_factors(req):
+            # Response duration informs reason inference. Only the separately
+            # supported engagement probability may contribute engagement delay.
+            engagement = _nz(req.trade_processing_factors.behavior.low_engagement_probability)
+            state.supplier_response_buffer += round(5 * engagement, 2)
+            self._explain(state, "response_delay_signal", response_delay_ratio,
+                          "reason inference only", "Response speed alone is not an engagement risk score.")
+        else:
+            self._supplier_response_delay(response_delay_ratio, state)
+            self._business_hours_delay(business_hours_delay_ratio, state)
         self._quote_completeness(quote_completeness_score, state)
         self._lead_time_revisions(lead_time_revision_count, state)
         self._upstream_signal(upstream_signal, state)
@@ -1044,11 +1093,11 @@ def _clip(value: float, low: float = 0.0, high: float = 1.0) -> float:
     return max(low, min(high, float(value)))
 
 
-def _nz(value: float | int | None, default: float = 0.0) -> float:
+def _nz(value: float | None, default: float = 0.0) -> float:
     return float(default if value is None else value)
 
 
-def _first(*values: float | int | None) -> float:
+def _first(*values: float | None) -> float:
     for value in values:
         if value is not None:
             return float(value)
