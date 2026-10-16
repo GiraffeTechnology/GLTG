@@ -23,11 +23,13 @@ from gltg.integrations.giraffe_db_client import (
     GiraffeDBUnavailable,
 )
 
-client = TestClient(app)
-
 BASE = "http://giraffe-db.test"
 SUPPLIER_ID = "GDB_SYN_V1_SUP_000001"
 TENANT = "tenant-demo"
+client = TestClient(
+    app,
+    headers={"X-Service-Auth": "test-inbound-secret", "X-Service-Tenant-ID": TENANT},
+)
 
 SUPPLIER_RECORD = {
     "supplier_id": SUPPLIER_ID,

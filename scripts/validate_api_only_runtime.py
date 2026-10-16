@@ -18,7 +18,6 @@ import json
 import os
 import socket
 import subprocess
-import sys
 import tempfile
 import time
 import urllib.request
@@ -32,6 +31,10 @@ def free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
+
+
+CI_TENANT = "ci-runtime-tenant"
+CI_AUTH = "ci-runtime-service-auth"
 
 
 def http_json(
@@ -55,7 +58,7 @@ def main() -> int:
         venv_dir = Path(tmp) / "venv"
         print(f"== creating clean venv: {venv_dir}")
         venv.create(venv_dir, with_pip=True)
-        python = venv_dir / "bin" / "python"
+        python = venv_dir / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
         print("== installing ONLY .[api] (no dev extras)")
         subprocess.run(
@@ -80,11 +83,12 @@ def main() -> int:
             return 1
 
         port = free_port()
+        server_env = {**os.environ, "GLTG_INBOUND_SERVICE_AUTH_SECRET": CI_AUTH}
         server = subprocess.Popen(
             [str(python), "-m", "uvicorn", "gltg.api.main:app",
              "--host", "127.0.0.1", "--port", str(port)],
             cwd=tmp,  # deliberately NOT the repo root: no source-tree fallback
-            env={**os.environ, "GLTG_INBOUND_SERVICE_AUTH_SECRET": "api-only-secret"},
+            env=server_env,
         )
         base = f"http://127.0.0.1:{port}"
         try:
@@ -108,12 +112,12 @@ def main() -> int:
                 f"{base}/v2/lead-time/simulate",
                 {
                     "request_id": "API-ONLY-1",
-                    "tenant_id": "api-only-tenant",
+                    "tenant_id": CI_TENANT,
                     "order": {"product_type": "t-shirt", "quantity": 1000},
                 },
                 {
-                    "X-Service-Auth": "api-only-secret",
-                    "X-Service-Tenant-ID": "api-only-tenant",
+                    "X-Service-Auth": CI_AUTH,
+                    "X-Service-Tenant-ID": CI_TENANT,
                 },
             )
             quantiles = body.get("quantiles", {})

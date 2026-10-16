@@ -13,7 +13,6 @@ from gltg.models.enums import ApparelNodeType, ParticipantType
 from gltg.models.order import ApparelOrderInput
 from gltg.models.participant import ParticipantProfile
 
-
 TEST_INBOUND_SECRET = "test-inbound-secret"
 TEST_EXPLICIT_IDENTITY_HEADER = "X-GLTG-Test-Explicit-Identity"
 
@@ -85,6 +84,7 @@ def make_order(order_id="TEST-001", quantity=1000, participants=None, requested_
     """Create a minimal ApparelOrderInput."""
     return ApparelOrderInput(
         order_id=order_id,
+        evaluation_date=date(2026, 1, 1),
         product_type="men_shirt_cotton",
         quantity=quantity,
         requested_delivery_date=requested_date,

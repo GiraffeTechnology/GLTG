@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 
 LeadTimeConfidence = Literal["P50", "P80", "P90"]
@@ -295,9 +295,15 @@ class GLTGSimulationRequestV2(BaseModel):
 
 
 class GLTGQuantiles(BaseModel):
-    p50_days: float
-    p80_days: float
-    p90_days: float
+    p50_days: float = Field(ge=0, allow_inf_nan=False)
+    p80_days: float = Field(ge=0, allow_inf_nan=False)
+    p90_days: float = Field(ge=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def _ordered(self) -> GLTGQuantiles:
+        if not self.p50_days <= self.p80_days <= self.p90_days:
+            raise ValueError("quantiles must satisfy P50 <= P80 <= P90")
+        return self
 
 
 class GLTGComponentBreakdown(BaseModel):

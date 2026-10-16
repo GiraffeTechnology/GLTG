@@ -80,6 +80,7 @@ def main() -> int:
         **os.environ,
         "GIRAFFE_DB_DATABASE_URL": database_url,
         "GIRAFFE_DB_SERVICE_AUTH_SECRET": gdb_secret,
+        "PYTHONPATH": str(gdb_repo / "src"),
     }
 
     print("== giraffe-db: fresh DB via alembic + supplier import ==")
@@ -114,6 +115,7 @@ def main() -> int:
         "GLTG_GIRAFFE_DB_SERVICE_AUTH_SECRET": gdb_secret,
         "GLTG_INBOUND_SERVICE_AUTH_SECRET": inbound_secret,
         "GLTG_PERSIST_RUNS": "true",
+        "PYTHONPATH": str(GLTG_ROOT / "src"),
     }
     gltg_proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "gltg.api.main:app",
@@ -154,6 +156,10 @@ def main() -> int:
                 check("giraffe-db startup", False)
                 return finish()
             gltg_base = f"http://127.0.0.1:{gltg_port}"
+            gltg_headers = {
+                "X-Service-Auth": inbound_secret,
+                "X-Service-Tenant-ID": TENANT,
+            }
             if not wait_healthy(client, f"{gltg_base}/health"):
                 check("GLTG startup", False)
                 return finish()
@@ -256,11 +262,72 @@ def main() -> int:
                     )
             check("profile display text stays out of persisted process input", profile_input_ok)
 
+            # Optional cross-repository acceptance: exercise Aivan's real thin
+            # HTTP client against this live GLTG process. This is enabled only
+            # when the controller supplies an exact AIVAN_REPO checkout.
+            aivan_repo_raw = os.environ.get("AIVAN_REPO", "").strip()
+            if aivan_repo_raw:
+                aivan_repo = Path(aivan_repo_raw)
+                sys.path.insert(0, str(aivan_repo / "src"))
+                try:
+                    from aivan.integrations.gltg_client import GLTGClient
+
+                    os.environ["GLTG_SERVICE_AUTH_SECRET"] = inbound_secret
+                    aivan_payload = {
+                        **payload,
+                        "request_id": "E2E-AIVAN-GLTG-1",
+                        "source_system": "aivan",
+                        "source_trace_id": "E2E-AIVAN-TRACE-1",
+                        "case_context": {
+                            "assessment_scope": "supplier_candidate",
+                            "supplier_id": SUPPLIER_ID,
+                        },
+                    }
+                    aivan_result = GLTGClient(base_url=gltg_base).simulate_lead_time_v2(
+                        aivan_payload
+                    )
+                    check(
+                        "Aivan real HTTP client calls independent GLTG v2 API",
+                        aivan_result.ok
+                        and aivan_result.status_code == 200
+                        and aivan_result.data is not None
+                        and aivan_result.data.get("quantiles") == quantiles,
+                    )
+                    aivan_persistence = (aivan_result.data or {}).get("persistence", {})
+                    aivan_run_id = aivan_persistence.get("giraffe_db_run_id")
+                    source_identity_ok = False
+                    if aivan_run_id:
+                        conn = sqlite3.connect(str(db_path))
+                        try:
+                            identity_row = conn.execute(
+                                "SELECT base_input_json FROM gltg_simulation_runs "
+                                "WHERE gltg_run_id = ?",
+                                (aivan_run_id,),
+                            ).fetchone()
+                        finally:
+                            conn.close()
+                        if identity_row:
+                            base_input = json.loads(identity_row[0])
+                            stored_request = base_input.get("request_json", {})
+                            source_identity_ok = (
+                                stored_request.get("source_system") == "aivan"
+                                and stored_request.get("source_trace_id")
+                                == "E2E-AIVAN-TRACE-1"
+                                and stored_request.get("case_context", {}).get(
+                                    "assessment_scope"
+                                )
+                                == "supplier_candidate"
+                            )
+                    check(
+                        "Aivan source identity is persisted with the evaluated request",
+                        source_identity_ok,
+                    )
+                finally:
+                    sys.path.remove(str(aivan_repo / "src"))
+
             # Determinism of the calculation across repeated calls.
             body2 = client.post(
-                f"{gltg_base}/v2/lead-time/simulate",
-                json=payload,
-                headers=gltg_headers,
+                f"{gltg_base}/v2/lead-time/simulate", json=payload, headers=gltg_headers
             ).json()
             check(
                 "repeated call: identical run id, quantiles and risk",
