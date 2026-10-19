@@ -1097,7 +1097,7 @@ metadata_json
 Implementation rule:
 
 ```text
-Do not add this table unless Codex determines behavior_observations is insufficient.
+Add this table only if `behavior_observations` cannot represent the required product data.
 If added, add API, seed data, tests, and lineage.
 ```
 
@@ -1424,7 +1424,7 @@ hide missing material status inside metadata_json only
 
 ---
 
-## 17. Codex Implementation Checklist
+## 17. Implementation Checklist
 
 ```text
 [ ] Add PRD documentation.
