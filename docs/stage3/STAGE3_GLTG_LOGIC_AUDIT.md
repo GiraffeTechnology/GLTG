@@ -29,7 +29,7 @@ Two real calculation engines exist, plus one LLM projection path:
    provider failure with `GLTG_ALLOW_RULE_FALLBACK=true`.
 3. **LLM evaluator** (`gltg.evaluator.*`): the **default** v2 path
    (`DEFAULT_EVALUATOR_MODE="llm"`, `DEFAULT_PROVIDER="qwen"`,
-   `default_base_url=https://dashscope.aliyuncs.com/compatible-mode/v1`).
+   with a configurable OpenAI-compatible endpoint).
    The model, not GLTG code, produces the quantiles; GLTG validates/repairs
    the returned packet (schema, quantile monotonicity, evidence-ref
    guardrails) and projects it into the v2 response.
