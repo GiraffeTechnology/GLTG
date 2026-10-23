@@ -7,12 +7,13 @@ composition, risk flags, and explanations.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 
 LeadTimeConfidence = Literal["P50", "P80", "P90"]
+TenantId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 MaterialAvailabilityStatus = Literal[
     "in_stock",
     "reserved_stock",
@@ -49,6 +50,7 @@ class GLTGCaseContext(BaseModel):
     po_id: str | None = None
     buyer_id: str | None = None
     supplier_id: str | None = None
+    assessment_scope: Literal["requirement_baseline", "supplier_candidate"] | None = None
 
 
 class GLTGOrderInputV2(BaseModel):
@@ -278,7 +280,7 @@ class GLTGEvidenceRequestV2(BaseModel):
 
 class GLTGSimulationRequestV2(BaseModel):
     request_id: str
-    tenant_id: str = "tenant_default"
+    tenant_id: TenantId
     source_system: str = "unknown"
     source_trace_id: str | None = None
     case_context: GLTGCaseContext = Field(default_factory=GLTGCaseContext)

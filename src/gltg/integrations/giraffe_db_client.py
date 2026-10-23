@@ -85,10 +85,22 @@ class GiraffeDBClient:
     # Transport
     # ------------------------------------------------------------------ #
     def _headers(self, tenant_id: str) -> dict[str, str]:
-        headers = {"X-Service-Tenant-ID": tenant_id}
-        if self._secret:
-            headers["X-Service-Auth"] = self._secret
-        return headers
+        bound_tenant = tenant_id.strip()
+        if not bound_tenant:
+            raise GiraffeDBAuthError("giraffe-db tenant context is required")
+        if not self._secret:
+            raise GiraffeDBNotConfigured("giraffe-db service auth is not configured")
+        return {
+            "X-Service-Tenant-ID": bound_tenant,
+            "X-Service-Auth": self._secret,
+        }
+
+    @staticmethod
+    def _require_response_tenant(data: Any, tenant_id: str, operation: str) -> None:
+        if not isinstance(data, dict) or data.get("tenant_id") != tenant_id:
+            raise GiraffeDBAuthError(
+                f"giraffe-db {operation} response tenant did not match authenticated tenant"
+            )
 
     def _request(
         self,
@@ -96,13 +108,17 @@ class GiraffeDBClient:
         path: str,
         tenant_id: str,
         json_body: dict[str, Any] | None = None,
+        idempotency_key: str | None = None,
     ) -> Any:
         url = f"{self.base_url}{path}"
+        headers = self._headers(tenant_id)
+        if idempotency_key:
+            headers["Idempotency-Key"] = idempotency_key
         try:
             response = httpx.request(
                 method,
                 url,
-                headers=self._headers(tenant_id),
+                headers=headers,
                 json=json_body,
                 timeout=self.timeout_seconds,
             )
@@ -120,8 +136,7 @@ class GiraffeDBClient:
             raise GiraffeDBUnavailable(f"giraffe-db error HTTP {response.status_code}")
         if response.status_code >= 400:
             raise GiraffeDBMalformedResponse(
-                f"giraffe-db rejected the request (HTTP {response.status_code}): "
-                f"{response.text[:300]}"
+                f"giraffe-db rejected the request (HTTP {response.status_code})"
             )
         try:
             return response.json()
@@ -137,6 +152,7 @@ class GiraffeDBClient:
             raise GiraffeDBMalformedResponse(
                 "supplier record failed validation (missing/mismatched supplier_id)"
             )
+        self._require_response_tenant(data, tenant_id, "supplier")
         return data
 
     def get_supplier_behavior_summary(self, supplier_id: str, tenant_id: str) -> dict[str, Any]:
@@ -147,17 +163,27 @@ class GiraffeDBClient:
             raise GiraffeDBMalformedResponse(
                 "behavior summary failed validation (missing/mismatched supplier_id)"
             )
+        self._require_response_tenant(data, tenant_id, "behavior summary")
         return data
 
     # ------------------------------------------------------------------ #
     # Run persistence
     # ------------------------------------------------------------------ #
     def persist_gltg_run(self, payload: dict[str, Any], tenant_id: str) -> dict[str, Any]:
-        data = self._request("POST", "/api/data/gltg-simulation-runs", tenant_id, payload)
+        request_payload = dict(payload)
+        idempotency_key = request_payload.pop("idempotency_key", None)
+        data = self._request(
+            "POST",
+            "/api/data/gltg-simulation-runs",
+            tenant_id,
+            request_payload,
+            idempotency_key=idempotency_key,
+        )
         if not isinstance(data, dict) or not data.get("gltg_run_id"):
             raise GiraffeDBMalformedResponse(
                 "gltg run persistence response failed validation (no gltg_run_id)"
             )
+        self._require_response_tenant(data, tenant_id, "persistence")
         return data
 
     def healthz(self) -> bool:
@@ -174,6 +200,9 @@ def client_from_env() -> GiraffeDBClient | None:
     base_url = os.environ.get("GLTG_GIRAFFE_DB_BASE_URL", "").strip()
     if not base_url:
         return None
+    service_auth_secret = os.environ.get("GLTG_GIRAFFE_DB_SERVICE_AUTH_SECRET") or None
+    if service_auth_secret is None or not service_auth_secret.strip():
+        raise GiraffeDBNotConfigured("giraffe-db service auth is not configured")
     timeout_raw = os.environ.get("GLTG_GIRAFFE_DB_TIMEOUT_SECONDS", "")
     try:
         timeout = float(timeout_raw) if timeout_raw else DEFAULT_TIMEOUT_SECONDS
@@ -181,7 +210,7 @@ def client_from_env() -> GiraffeDBClient | None:
         timeout = DEFAULT_TIMEOUT_SECONDS
     return GiraffeDBClient(
         base_url=base_url,
-        service_auth_secret=os.environ.get("GLTG_GIRAFFE_DB_SERVICE_AUTH_SECRET") or None,
+        service_auth_secret=service_auth_secret,
         timeout_seconds=timeout,
     )
 
