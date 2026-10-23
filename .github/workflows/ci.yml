@@ -9,6 +9,9 @@ jobs:
   test:
     name: Test GLTG (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    env:
+      GLTG_INBOUND_SERVICE_AUTH_SECRET: ci-only-service-auth
+      GLTG_CI_TENANT_ID: ci-only-tenant
     # No env pinning: CI must exercise the shipped defaults (deterministic
     # evaluator, no LLM calls). Evaluator tests that need llm mode set it
     # explicitly with the deterministic mock provider.
@@ -108,7 +111,9 @@ jobs:
         run: |
           curl -sf http://localhost:8090/v2/lead-time/simulate \
             -H 'content-type: application/json' \
-            -d '{"request_id":"CI-V2-1","order":{"product_type":"t-shirt","quantity":5000,"deadline_days":150},
+            -H "X-Service-Auth: $GLTG_INBOUND_SERVICE_AUTH_SECRET" \
+            -H "X-Service-Tenant-ID: $GLTG_CI_TENANT_ID" \
+            -d '{"request_id":"CI-V2-1","tenant_id":"ci-only-tenant","order":{"product_type":"t-shirt","quantity":5000,"deadline_days":150},
                  "supplier":{"supplier_id":"GDB_SYN_V1_SUP_000001","capacity_per_day":500,
                  "material_ready_days":7,"production_days":12,"qc_days":3,"logistics_days":18,"confidence":0.75},
                  "source_observation_ids":["GDB_SYN_V1_OBS_000001"]}' \
@@ -119,7 +124,9 @@ jobs:
         run: |
           curl -sf http://localhost:8090/v2/reforecast \
             -H 'content-type: application/json' \
-            -d '{"request_id":"CI-V2-2","order":{"product_type":"t-shirt","quantity":5000,"deadline_days":150},
+            -H "X-Service-Auth: $GLTG_INBOUND_SERVICE_AUTH_SECRET" \
+            -H "X-Service-Tenant-ID: $GLTG_CI_TENANT_ID" \
+            -d '{"request_id":"CI-V2-2","tenant_id":"ci-only-tenant","order":{"product_type":"t-shirt","quantity":5000,"deadline_days":150},
                  "supplier":{"supplier_id":"GDB_SYN_V1_SUP_000001","capacity_per_day":500,
                  "material_ready_days":7,"production_days":12,"qc_days":3,"logistics_days":18,"confidence":0.75},
                  "events":[{"event_type":"supplier_response_delay","response_delay_ratio":3.5}]}' \
@@ -129,9 +136,8 @@ jobs:
   giraffe-db-e2e:
     name: Real HTTP E2E vs giraffe-db
     runs-on: ubuntu-latest
-    # giraffe-db is a private repository; the real-HTTP E2E runs when a token
-    # with read access is configured (GIRAFFE_DB_CI_TOKEN secret). Without it,
-    # the job reports the skip explicitly instead of faking the integration.
+    env:
+      GIRAFFE_DB_REVISION: eddf76fbab21ecf32323187bd7a27e3dd819d1d7
     steps:
       - uses: actions/checkout@v4
 
@@ -141,32 +147,39 @@ jobs:
           python-version: "3.11"
 
       - name: Check giraffe-db access
-        id: gdb
         env:
           GIRAFFE_DB_CI_TOKEN: ${{ secrets.GIRAFFE_DB_CI_TOKEN }}
         run: |
-          if [ -n "$GIRAFFE_DB_CI_TOKEN" ]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::GIRAFFE_DB_CI_TOKEN not configured; real-HTTP giraffe-db E2E skipped (run scripts/validate_gltg_giraffe_db_e2e.py locally)."
-          fi
+          test -n "$GIRAFFE_DB_CI_TOKEN" || {
+            echo "::error::GIRAFFE_DB_CI_TOKEN is required for the real HTTP E2E"
+            exit 1
+          }
+          [[ "$GIRAFFE_DB_REVISION" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::GIRAFFE_DB_REVISION must be an exact 40-hex commit"
+            exit 1
+          }
 
       - name: Clone giraffe-db
-        if: steps.gdb.outputs.available == 'true'
-        env:
-          GIRAFFE_DB_CI_TOKEN: ${{ secrets.GIRAFFE_DB_CI_TOKEN }}
-        run: |
-          git clone "https://x-access-token:${GIRAFFE_DB_CI_TOKEN}@github.com/GiraffeTechnology/giraffe-db.git" ../giraffe-db
+        uses: actions/checkout@v4
+        with:
+          repository: GiraffeTechnology/giraffe-db
+          ref: ${{ env.GIRAFFE_DB_REVISION }}
+          path: giraffe-db
+          token: ${{ secrets.GIRAFFE_DB_CI_TOKEN }}
+          persist-credentials: false
+
+      - name: Verify exact giraffe-db revision
+        working-directory: giraffe-db
+        run: test "$(git rev-parse HEAD)" = "$GIRAFFE_DB_REVISION"
 
       - name: Install GLTG + giraffe-db
-        if: steps.gdb.outputs.available == 'true'
         run: |
           python -m pip install -e ".[dev]"
-          python -m pip install -e "../giraffe-db[dev]"
+          python -m pip install -e "giraffe-db[dev]"
 
       - name: Real HTTP E2E (GLTG <-> giraffe-db)
-        if: steps.gdb.outputs.available == 'true'
+        env:
+          GIRAFFE_DB_REPO: ${{ github.workspace }}/giraffe-db
         run: python scripts/validate_gltg_giraffe_db_e2e.py
 
   docker:
@@ -180,7 +193,9 @@ jobs:
 
       - name: Startup smoke (non-root, /health, /ready, v2 deterministic)
         run: |
-          docker run -d --name gltg -p 8090:8090 giraffe-gltg:ci
+          docker run -d --name gltg -p 8090:8090 \
+            -e GLTG_INBOUND_SERVICE_AUTH_SECRET=ci-only-service-auth \
+            giraffe-gltg:ci
           for i in $(seq 1 30); do
             if curl -sf http://localhost:8090/health > /dev/null; then break; fi
             sleep 1
@@ -190,6 +205,8 @@ jobs:
           curl -sf http://localhost:8090/ready | grep -q '"evaluator_mode":"deterministic"'
           curl -sf http://localhost:8090/v2/lead-time/simulate \
             -H 'content-type: application/json' \
-            -d '{"request_id":"CI-DOCKER","order":{"product_type":"t-shirt","quantity":1000}}' \
+            -H 'X-Service-Auth: ci-only-service-auth' \
+            -H 'X-Service-Tenant-ID: ci-only-tenant' \
+            -d '{"request_id":"CI-DOCKER","tenant_id":"ci-only-tenant","order":{"product_type":"t-shirt","quantity":1000}}' \
             | grep -q '"evaluation_mode":"deterministic"'
           docker rm -f gltg
