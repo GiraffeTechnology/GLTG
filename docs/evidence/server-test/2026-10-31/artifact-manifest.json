@@ -1,0 +1,17 @@
+{
+  "schema": "gltg.public-artifact-manifest.v1",
+  "manifest_excludes_itself": true,
+  "byte_scope": "Exact UTF-8 Git blob bytes, not platform-dependent working-copy line endings",
+  "artifacts": [
+    {
+      "path": "REVIEW-CORRECTIONS.md",
+      "bytes": 1892,
+      "sha256": "f6ad18b91f72956433a83b473aacc02d1f23a0ae3450c55f8ccd113757ce8f29"
+    },
+    {
+      "path": "review-corrections.json",
+      "bytes": 3394,
+      "sha256": "124894b20c77e89672dc3091b54e52d6f960682a30d89b69c4470677385f482b"
+    }
+  ]
+}

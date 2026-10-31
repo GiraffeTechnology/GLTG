@@ -1,0 +1,54 @@
+{
+  "schema": "gltg.historical-evidence-corrections.v1",
+  "date": "2026-10-31",
+  "historical_evidence_commit": "6acc363323d63b274ca1f52fed45d5405a83e8f7",
+  "historical_candidate_commit": "61092e07286d3925e1887ffde712105b568d37e2",
+  "historical_candidate_tree": "bafdc98c6c901589baee379d534f0337aaf393da",
+  "historical_artifacts_preserved": true,
+  "corrections": [
+    {
+      "id": "TARGET-CLEANUP-UNKNOWN",
+      "review_thread": "PRRT_kwDOTGnyrM6tB5er",
+      "affected_claim": "2026-10-16/delivery-status.json: rollback.target_temporary_processes_and_workspaces_removed=true and aggregate cleanup prose",
+      "corrected_aggregate_status": "UNKNOWN",
+      "all_target_resources_removed_verified": null,
+      "evidence": "2026-10-16/target-attempts.json: final attempt has transport_exit=255 without a remote cleanup result or proof that execution never began",
+      "scope": "Individual recorded cleanup results remain historical evidence for those attempts only. They do not establish cleanup of the final transport-failed attempt.",
+      "new_target_reconciliation_or_cleanup_executed": false
+    },
+    {
+      "id": "COMMITTED-SOURCE-DIGEST",
+      "review_thread": "PRRT_kwDOTGnyrM6tB5ex",
+      "affected_claim": "2026-10-16/delivery-status.json and http-supplement.json: candidate/sources.gltg.runtime_source_sha256",
+      "historical_digest": "a06d2c6f355c065944e3a3b0d8617730e140cce639e9cd8ca2e336b83f048a1f",
+      "historical_runtime_byte_identity_independently_verified": false,
+      "recomputed_committed_source": {
+        "commit": "61092e07286d3925e1887ffde712105b568d37e2",
+        "tracked_src_files": 90,
+        "algorithm": "SHA256 of each ordinal-sorted src path encoded as UTF-8, NUL, then exact Git blob bytes, concatenated without an extra delimiter",
+        "git_blob_source_sha256": "d2f5c7d111253398efb619336506f0dd5a9b48bd93ee463d6cfcc26d3ad10d52",
+        "method": "Read immutable Git blobs and hash bytes only; no product runtime or tests executed"
+      },
+      "interpretation": "The committed-source digest is not a replacement test result. The different historical runtime digest cannot certify execution of these exact committed bytes without further byte-identity reconciliation. Do not silently relabel the old runtime digest as the recomputed value.",
+      "historical_test_counts_reexecuted_or_upgraded": false
+    },
+    {
+      "id": "DEPENDENCY-AUDIT-UNVERIFIED",
+      "review_thread": "PRRT_kwDOTGnyrM6tB5ey",
+      "affected_claim": "2026-10-16/SUMMARY.md: dependency audit found no known vulnerabilities",
+      "corrected_status": "UNVERIFIED_IN_PUBLIC_EVIDENCE_PACKAGE",
+      "reason": "The published exit-code list and artifact manifest do not bind this claim to an audit command/exit, audit-tool version, vulnerability database state and report digest for the exact candidate.",
+      "interpretation": "Retain the historical statement as a reported result, not an independently verifiable completed security check or target-runtime audit. No new audit was run for this correction."
+    }
+  ],
+  "claims": {
+    "product_tests_executed_for_this_correction": false,
+    "server_action": false,
+    "database_action": false,
+    "all_target_cleanup_confirmed": false,
+    "target_mysql_acceptance": false,
+    "merged_delivery": false,
+    "production_deployed": false,
+    "full_application_workflow_verified": false
+  }
+}
