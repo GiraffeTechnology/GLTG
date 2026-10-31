@@ -77,3 +77,35 @@ def test_explicit_zero_and_absent_history_have_different_provenance():
 
 def test_review_formula_change_has_a_distinct_rule_version():
     assert BehavioralLeadTimeSimulator().simulate(request_with_accuracy()).rule_version == "behavior-rules-v0.4.1"
+
+
+@pytest.mark.parametrize("material,kind", [
+    ({"material_availability_status": "in_stock"}, "derived"),
+    ({"material_availability_status": "reserved_stock", "lock_confirmation_days": 0}, "explicit"),
+    ({"material_availability_status": "reserved_stock"}, "derived_with_rule_priors"),
+    ({"material_availability_status": "partial_stock", "partial_shortage_procurement_days": 0}, "explicit"),
+    ({"material_availability_status": "partial_stock", "stock_coverage_ratio": 0.5}, "derived_with_rule_priors"),
+    ({"material_availability_status": "supplier_confirmation_required", "raw_material_lead_time_estimate_days": 0}, "explicit"),
+    ({"material_availability_status": "not_available", "raw_material_lead_time_estimate_days": 12}, "derived_with_rule_priors"),
+    ({"material_availability_status": "substitute_material_required", "substitute_material_approval_days": 0,
+      "material_procurement_days": 0}, "derived"),
+    ({"material_availability_status": "unknown", "default_category_material_days": 2,
+      "raw_material_lead_time_uncertainty_score": 0}, "derived"),
+    ({"material_availability_status": "unknown"}, "rule_prior"),
+])
+def test_material_provenance_distinguishes_explicit_derived_and_missing_inputs(material, kind):
+    request = request_with_accuracy(1)
+    request = request.model_copy(update={
+        "trade_processing_factors": request.trade_processing_factors.model_copy(update={
+            "material": type(request.trade_processing_factors.material).model_validate(material),
+        }),
+    })
+    result = BehavioralLeadTimeSimulator().simulate(request)
+    assert result.explanation_json["factor_input_sources"]["material_procurement_days"]["kind"] == kind
+
+
+def test_unused_factor_calculator_does_not_claim_resolved_factor_provenance():
+    request = GLTGSimulationRequestV2.model_validate({
+        "request_id": "PRD-REVIEW-NO-FACTORS", "tenant_id": "tenant-a", "order": {"quantity": 100},
+    })
+    assert BehavioralLeadTimeSimulator().simulate(request).explanation_json["factor_input_sources"] == {}

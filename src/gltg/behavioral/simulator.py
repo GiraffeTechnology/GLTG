@@ -26,7 +26,7 @@ from .schemas import (
 )
 
 MODEL_VERSION = "gltg-hybrid-v0.1.0"
-RULE_VERSION = "behavior-rules-v0.4.0"
+RULE_VERSION = "behavior-rules-v0.4.1"
 Z80 = 0.8416212335729143
 Z90 = 1.2815515655446004
 SIGMA_MIN = 0.05
@@ -154,7 +154,12 @@ class BehavioralLeadTimeSimulator:
             explanation_json={
                 "summary": self._summary(risk, baseline_source, trade_calc.response_delay_reason_inference),
                 "baseline_source": baseline_source,
-                "prior_policy": "Missing factor parameters use versioned rule priors, not observed history or calibrated accuracy.",
+                "prior_policy": (
+                    "Explicit factor values are preserved. Omitted values may be derived from supplied "
+                    "history, source references or related factors; versioned rule priors fill missing "
+                    "inputs only. Factor provenance is disclosed below, not calibrated accuracy."
+                ),
+                "factor_input_sources": self._factor_input_sources(req, components),
                 "composer": composer,
                 "composition_parameters": {
                     "central_shift_days": round(shift, 2),
@@ -517,7 +522,7 @@ class BehavioralLeadTimeSimulator:
                 0.30 * complete_quote_score
                 + 0.25 * _nz(behavior.detailed_breakdown_signal, 0.0)
                 + 0.20 * _nz(behavior.explicit_checking_signal, 0.0)
-                + 0.15 * _first(req.behavior_features.supplier.lead_time_confidence_score, 0.65)
+                + 0.15 * self._historical_quote_accuracy_score(req)
                 + 0.10 * in_house
             ),
             "timezone_or_holiday": (
@@ -548,8 +553,7 @@ class BehavioralLeadTimeSimulator:
             quote_completeness = _first(behavior.quote_completeness_score, req.behavior_features.supplier.quote_completeness_score, 0.65)
             material_confidence = _first(material.material_availability_confidence, 0.35)
             lead_time_confidence = _first(req.behavior_features.supplier.lead_time_confidence_score, req.supplier.confidence, 0.65)
-            historical_quote_accuracy = _first(behavior.historical_quote_accuracy_score,
-                _clip(1 - abs(_nz(req.historical_baseline.historical_quoted_vs_actual_error_days, 3.0)) / 14))
+            historical_quote_accuracy = self._historical_quote_accuracy_score(req)
             source_evidence = _first(behavior.source_evidence_score, 0.85 if req.source_observation_ids else 0.35)
             score = (
                 0.25 * quote_completeness
@@ -569,6 +573,101 @@ class BehavioralLeadTimeSimulator:
         if unsupported_fast_quote:
             score -= 0.15
         return _clip(score)
+
+    @staticmethod
+    def _historical_quote_accuracy_score(req: GLTGSimulationRequestV2) -> float:
+        provided = req.trade_processing_factors.behavior.historical_quote_accuracy_score
+        if provided is not None:
+            return provided
+        error_days = req.historical_baseline.historical_quoted_vs_actual_error_days
+        return _clip(1 - abs(_nz(error_days, 3.0)) / 14)
+
+    def _factor_input_sources(
+        self, req: GLTGSimulationRequestV2, components: GLTGComponentBreakdown,
+    ) -> dict[str, dict[str, Any]]:
+        """Disclose selected fallbacks without relabeling priors as observations."""
+        if not self._has_trade_processing_factors(req):
+            return {}
+        behavior = req.trade_processing_factors.behavior
+        material = req.trade_processing_factors.material
+        accuracy_fields = []
+        accuracy_kind = "rule_prior"
+        if behavior.historical_quote_accuracy_score is not None:
+            accuracy_kind = "explicit"
+            accuracy_fields = ["trade_processing_factors.behavior.historical_quote_accuracy_score"]
+        elif req.historical_baseline.historical_quoted_vs_actual_error_days is not None:
+            accuracy_kind = "derived"
+            accuracy_fields = ["historical_baseline.historical_quoted_vs_actual_error_days"]
+        evidence_fields = []
+        evidence_kind = "rule_prior"
+        if behavior.source_evidence_score is not None:
+            evidence_kind = "explicit"
+            evidence_fields = ["trade_processing_factors.behavior.source_evidence_score"]
+        elif req.source_observation_ids:
+            evidence_kind = "derived"
+            evidence_fields = ["source_observation_ids"]
+
+        status = material.material_availability_status
+        explicit_duration = False
+        if status == "in_stock":
+            required = []
+        elif status == "reserved_stock":
+            required = ["lock_confirmation_days"]
+            explicit_duration = material.lock_confirmation_days is not None
+        elif status == "partial_stock":
+            if material.partial_shortage_procurement_days is not None:
+                required = ["partial_shortage_procurement_days"]
+                explicit_duration = True
+            else:
+                required = ["raw_material_lead_time_estimate_days", "stock_coverage_ratio"]
+        elif status in {"supplier_confirmation_required", "not_available"}:
+            required = ["raw_material_lead_time_estimate_days"]
+            explicit_duration = (
+                status == "supplier_confirmation_required"
+                and material.raw_material_lead_time_estimate_days is not None
+            )
+        elif status == "substitute_material_required":
+            procurement_field = (
+                "material_procurement_days" if material.material_procurement_days is not None
+                else "raw_material_lead_time_estimate_days"
+            )
+            required = ["substitute_material_approval_days", procurement_field]
+        else:
+            multiplier_field = (
+                "raw_material_lead_time_uncertainty_score"
+                if material.uncertainty_multiplier is None
+                and material.raw_material_lead_time_uncertainty_score is not None
+                else "uncertainty_multiplier"
+            )
+            required = ["default_category_material_days", multiplier_field]
+        present = [name for name in required if getattr(material, name) is not None]
+        missing = [name for name in required if name not in present]
+        if explicit_duration:
+            material_kind = "explicit"
+        elif not missing and status != "not_available":
+            material_kind = "derived"
+        elif present or status != "unknown":
+            material_kind = "derived_with_rule_priors"
+        else:
+            material_kind = "rule_prior"
+        material_fields = [f"trade_processing_factors.material.{name}" for name in present]
+        if "material_availability_status" in material.model_fields_set:
+            material_fields.insert(0, "trade_processing_factors.material.material_availability_status")
+        return {
+            "historical_quote_accuracy_score": {
+                "kind": accuracy_kind, "source_fields": accuracy_fields,
+                "value": self._historical_quote_accuracy_score(req),
+            },
+            "source_evidence_score": {
+                "kind": evidence_kind, "source_fields": evidence_fields,
+                "value": _first(behavior.source_evidence_score, 0.85 if req.source_observation_ids else 0.35),
+            },
+            "material_procurement_days": {
+                "kind": material_kind, "source_fields": material_fields,
+                "missing_parameters": missing,
+                "value": components.material_procurement_days,
+            },
+        }
 
     @staticmethod
     def _capacity_queue_risk(utilization: float | None) -> float:
