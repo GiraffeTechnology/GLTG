@@ -39,13 +39,17 @@ def make_participant(pid, ptype=ParticipantType.GARMENT_FACTORY, node_types=None
     )
 
 
-def make_order(order_id="TEST-001", quantity=1000, participants=None, requested_date=None):
+def make_order(
+    order_id="TEST-001", quantity=1000, participants=None, requested_date=None,
+    evaluation_date=None,
+):
     """Create a minimal ApparelOrderInput."""
     return ApparelOrderInput(
         order_id=order_id,
         product_type="men_shirt_cotton",
         quantity=quantity,
         requested_delivery_date=requested_date,
+        evaluation_date=evaluation_date,
         dynamic_form={"fabric_type": "cotton"},
         participants=participants or [],
     )

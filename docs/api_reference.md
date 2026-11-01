@@ -18,7 +18,7 @@ engine = LeadTimeGraphEngine()
 | `build_graph` | `(order_input: ApparelOrderInput) -> LeadTimeGraph` | Builds the lead-time DAG, resolves dependency dates, and identifies the critical path. Returns the resolved `LeadTimeGraph` without generating options. |
 | `enumerate_options` | `(graph: LeadTimeGraph) -> list[DeliveryPathOption]` | Generates all candidate delivery path options from a resolved graph by enumerating participant combinations. Does not prune or rank. |
 | `evaluate` | `(order_input: ApparelOrderInput) -> DeliveryFeasibilityPacket` | Full pipeline: validate -> build graph -> enumerate options -> prune -> generate variants -> compute probabilities -> rank -> build packet. The primary entry point for all callers. |
-| `reforecast` | `(existing_packet: DeliveryFeasibilityPacket, events: list[ProgressEvent]) -> DeliveryFeasibilityPacket` | Applies progress events to the existing packet's options, re-resolves the graph, and returns an updated packet with revised dates and risk flags. |
+| `reforecast` | `(existing_packet: DeliveryFeasibilityPacket, events: list[ProgressEvent], evaluation_date: date, now: datetime \| None = None) -> DeliveryFeasibilityPacket` | Applies progress events to the existing packet's options, re-resolves the graph from the required planning date, and returns an updated packet with revised dates and risk flags. `now` controls the updated run timestamp. |
 
 ---
 
@@ -30,6 +30,7 @@ engine = LeadTimeGraphEngine()
 | `product_type` | `str` | Yes | Product description (e.g. `"men_shirt_cotton_white"`) |
 | `quantity` | `int` | Yes | Total units ordered |
 | `requested_delivery_date` | `date \| None` | No | Buyer's requested delivery date |
+| `evaluation_date` | `date \| None` | No | Planning start date for graph resolution; defaults to the current date when omitted. Supply it explicitly for reproducible dated scenarios. |
 | `trade_term` | `str \| None` | No | Incoterm (FOB, CIF, DDP, etc.) |
 | `destination` | `str \| None` | No | Delivery destination port or city |
 | `dynamic_form` | `dict[str, Any]` | No | Pass-through buyer form fields (fabric type, color, QC standard, etc.) |
@@ -38,6 +39,17 @@ engine = LeadTimeGraphEngine()
 | `supplier_responses` | `list[SupplierResponse]` | No | Formal lead-time confirmations from participants |
 | `progress_events` | `list[ProgressEvent]` | No | In-flight progress events already known at evaluation time |
 | `calendar` | `CalendarConfig \| None` | No | Working-day calendar configuration |
+
+`evaluation_date` anchors the calculation; `requested_delivery_date` is the
+deadline against which those calculated dates are checked. A historical scenario
+must set its initial evaluation date as well as the date passed to `reforecast`.
+An expired or impossible deadline remains infeasible. Event dates describe when
+events occurred and must be part of the same scenario timeline.
+
+`generated_at` is run metadata, not the planning start date. Initial evaluation
+records the actual run timestamp. For an event-bearing reforecast, callers may
+inject `now` to make that timestamp reproducible; a no-event reforecast returns
+the existing packet unchanged.
 
 ---
 

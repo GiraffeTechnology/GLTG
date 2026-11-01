@@ -32,6 +32,7 @@ def packet():
         quantity=3000,
         participants=participants,
         requested_date=date(2026, 12, 31),
+        evaluation_date=date(2026, 6, 27),
     )
     engine = LeadTimeGraphEngine()
     return engine.evaluate(order)
