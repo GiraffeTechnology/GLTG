@@ -55,3 +55,7 @@ Preserve deployment-specific port reservations. For the currently authorized CTY
 For an authorized deployment, inspect current listeners and configuration, then select a verified free port that is not reserved by deployment configuration. The user's unused-port authorization does not require a separate allocation approval. The approved MyAivan HTTPS entry on port 9444 remains a valid target; a failed route must be diagnosed rather than treated as a blanket prohibition on deployment.
 
 Server, console and network actions must match the current explicit authorization. Port selection does not authorize unrelated security/account changes, credential disclosure or disruption of existing services.
+
+Do not merge a pull request until CI has passed for its current revision and the repository's merge requirements are satisfied.
+Do not clone a repository's main branch while that repository has any open pull requests.
+Do not leave pushed branch changes without a pull request. Submit every pushed change through a pull request.
