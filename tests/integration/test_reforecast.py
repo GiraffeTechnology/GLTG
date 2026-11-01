@@ -30,6 +30,7 @@ def base_packet(engine):
         quantity=2000,
         participants=participants,
         requested_date=date(2026, 12, 31),
+        evaluation_date=REFC_ANCHOR,
     )
     return engine.evaluate(order)
 
@@ -40,7 +41,7 @@ def _material_delay_event(node_id: str | None, delay_days: int = 10) -> Progress
         order_id="REFC-001",
         node_id=node_id,
         event_type=ProgressEventType.MATERIAL_DELAYED,
-        event_date=date.today(),
+        event_date=REFC_ANCHOR,
         payload={"delay_days": delay_days},
     )
 
@@ -155,7 +156,7 @@ def _fresh_packet():
     engine = LeadTimeGraphEngine()
     participants = [make_participant(f"P{i}") for i in range(1, 4)]
     order = make_order(order_id="REFC-DET", quantity=2000, participants=participants,
-                       requested_date=date(2026, 12, 31))
+                       requested_date=date(2026, 12, 31), evaluation_date=REFC_ANCHOR)
     return engine, engine.evaluate(order)
 
 
